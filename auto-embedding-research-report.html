@@ -391,13 +391,13 @@
         <a href="#definition">2. 技术定义与边界</a>
         <a href="#tencent">3. 腾讯云实现拆解</a>
         <a href="#mechanisms">4. 技术机制分层拆解</a>
+        <a href="#patterns">4.4 架构模式对比</a>
         <a href="#industry">5. 产业落地与厂商矩阵</a>
-        <a href="#patterns">6. 架构模式对比</a>
-        <a href="#academic">7. 学术前沿</a>
-        <a href="#pg18-design">8. 社区 PG18 方案设计</a>
-        <a href="#evaluation">9. 工程评估框架</a>
-        <a href="#recommendations">10. 选型建议</a>
-        <a href="#sources">11. 参考资料</a>
+        <a href="#academic">6. 学术前沿</a>
+        <a href="#pg18-design">7. 社区 PG18 方案设计</a>
+        <a href="#evaluation">8. 工程评估框架</a>
+        <a href="#recommendations">9. 选型建议</a>
+        <a href="#sources">10. 参考资料</a>
       </nav>
 
       <div class="filter-panel">
@@ -762,6 +762,266 @@
             </tbody>
           </table>
         </div>
+
+
+        <h3 id="patterns">4.4 架构模式对比</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>模式</th>
+                <th>典型厂商/产品</th>
+                <th>优点</th>
+                <th>缺点</th>
+                <th>适用场景</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>同步触发器调用模型</td>
+                <td>Aurora aws_ml、Oracle 自建触发器</td>
+                <td>实现简单，向量与事务接近强一致。</td>
+                <td>模型调用延迟和失败会放大写事务风险，不适合高 QPS 写入。</td>
+                <td>低频写入、对新鲜度要求极高、可接受写入延迟的内部系统。</td>
+              </tr>
+              <tr>
+                <td>触发器 + 队列 + 后台 worker</td>
+                <td>TencentDB、Supabase、Aurora SQS/Lambda</td>
+                <td>解耦事务和模型调用，支持批处理、重试和限流。</td>
+                <td>最终一致，需要积压监控、幂等设计、过期写回防护。</td>
+                <td>在线业务表、RAG 知识库、商品/内容语义索引。</td>
+              </tr>
+              <tr>
+                <td>字段/索引级自动 Embedding</td>
+                <td>MongoDB autoEmbed、Elastic semantic_text、Snowflake Cortex Search</td>
+                <td>接入最简单，查询侧也可自动向量化，开发者心智成本低。</td>
+                <td>模型、成本、索引内部细节受托管服务控制；跨云迁移较难。</td>
+                <td>快速构建 AI Search、Agent memory、企业知识库。</td>
+              </tr>
+              <tr>
+                <td>CDC/湖仓同步索引</td>
+                <td>Databricks Delta Sync、PolarSearch AutoETL</td>
+                <td>适合批流一体和大规模离线/近实时数据，治理和血缘较好。</td>
+                <td>端到端延迟通常高于事务触发器；依赖同步管道。</td>
+                <td>湖仓数据、日志、文档资产、BI + RAG。</td>
+              </tr>
+              <tr>
+                <td>数据库内推理</td>
+                <td>Oracle ONNX、AlloyDB google_ml、PolarDB polar_ai</td>
+                <td>减少数据出库，权限边界清晰，可用 SQL 编排。</td>
+                <td>模型格式、硬件、版本升级受限；复杂模型可能不适合数据库进程。</td>
+                <td>私有化部署、合规数据、稳定模型的批量生成。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>4.5 代表方案详细拆解</h3>
+        <p>
+          下列六类方案与腾讯 Auto Embedding 解决的是同一类问题，但系统边界不同：有的把模型调用放在数据库事务内，有的把任务交给云函数/队列，有的把向量化嵌进搜索索引或同步管道。
+          因此不能只比较“是否自动”，而要比较写入路径是否阻塞、谁负责重试、向量存在哪里、查询侧是否自动向量化，以及模型/索引版本如何治理。
+        </p>
+
+        <div class="grid cols-2">
+          <article class="card">
+            <h3>Aurora aws_ml：数据库内同步调用 Bedrock</h3>
+            <p><strong>定位：</strong>这是 Aurora PostgreSQL 的 Aurora Machine Learning 路线，通过 <code>aws_ml</code> 扩展暴露 <code>aws_bedrock.invoke_model_get_embeddings</code> 等 SQL 函数，让数据库函数直接调用 Amazon Bedrock 生成 embedding。</p>
+            <h4>核心组件</h4>
+            <ul>
+              <li><strong>pgvector：</strong>负责 vector 列和 HNSW/IVFFlat 检索。</li>
+              <li><strong>aws_ml / aws_bedrock schema：</strong>提供 <code>invoke_model</code> 与 <code>invoke_model_get_embeddings</code>。</li>
+              <li><strong>IAM role：</strong>Aurora 集群需要具备访问 Bedrock 的权限。</li>
+              <li><strong>触发器或存储过程：</strong>捕获 INSERT/UPDATE 或批量扫描 NULL embedding 行。</li>
+            </ul>
+            <h4>数据流程</h4>
+            <pre><code>INSERT/UPDATE documents
+  -> trigger / stored procedure
+  -> aws_bedrock.invoke_model_get_embeddings(
+       model_id, content_type, json_key, model_input)
+  -> 返回 float8[] / 转 vector
+  -> UPDATE documents.embedding
+  -> pgvector 查询</code></pre>
+            <h4>一致性与失败语义</h4>
+            <p>如果在触发器中同步调用，向量可以接近事务内一致；但 Bedrock 单次调用可能达到百毫秒级，模型超时、限流或 IAM 错误会直接影响写事务。AWS 博客也建议批量过程要分批提交，避免单个长事务阻塞。</p>
+            <h4>优势与风险</h4>
+            <ul>
+              <li><strong>优势：</strong>SQL 内完成闭环，架构最简单；适合低频写入、后台批量补齐、管理脚本。</li>
+              <li><strong>风险：</strong>把外部模型 SLA 引入数据库事务；高 QPS 写入场景不建议用同步触发器。</li>
+              <li><strong>与腾讯差异：</strong>腾讯 Auto Embedding 把模型调用放到 bgworker 异步执行；Aurora aws_ml 模式更像“数据库内模型调用原语”，任务系统需要用户自己搭。</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <h3>Aurora SQS/Lambda：云原生异步队列 + 批处理</h3>
+            <p><strong>定位：</strong>这是 AWS 官方样例中更适合生产高吞吐的模式。数据库触发器不直接调 Bedrock，而是发布轻量事件；SQS/Lambda 负责削峰、批量、重试和横向扩容。</p>
+            <h4>核心组件</h4>
+            <ul>
+              <li><strong>Aurora PostgreSQL + pgvector：</strong>存源数据和向量。</li>
+              <li><strong>触发器 / 事件表 / aws_lambda 扩展：</strong>把 row id、操作类型、版本信息发布到异步链路。</li>
+              <li><strong>Amazon SQS：</strong>提供持久队列、visibility timeout、重试和 dead-letter queue。</li>
+              <li><strong>Lambda worker：</strong>批量读取源行、调用 Bedrock embedding、写回 Aurora。</li>
+              <li><strong>RDS Proxy：</strong>缓解 Lambda 并发连接数据库的问题。</li>
+            </ul>
+            <h4>数据流程</h4>
+            <pre><code>INSERT/UPDATE
+  -> DB trigger marks row pending / emits event
+  -> async Lambda or SQS message
+  -> Lambda batch reads N row ids
+  -> fetch latest text from Aurora
+  -> call Bedrock embedding in batch
+  -> update embedding/status/source_hash
+  -> delete SQS message or let it retry</code></pre>
+            <h4>一致性与失败语义</h4>
+            <p>这是最终一致模型。SQS 保证消息在 visibility timeout 后可重试，Lambda 失败可进入 DLQ。若 worker 写回前不校验 source_hash，仍可能把旧文本向量写回；因此生产实现应学习腾讯的“消费时重读 + 写回前比对”。</p>
+            <h4>优势与风险</h4>
+            <ul>
+              <li><strong>优势：</strong>扩展性和隔离性好；Bedrock 限流、网络失败不会直接拖垮数据库事务；SQS/Lambda 生态成熟。</li>
+              <li><strong>风险：</strong>组件多，VPC、IAM、RDS Proxy、DLQ、幂等写回都要用户设计；跨组件排障比数据库内 bgworker 复杂。</li>
+              <li><strong>与腾讯差异：</strong>腾讯把队列和 worker 封装到数据库扩展；AWS 模式把队列和 worker 外置到云服务，弹性更强但工程拼装更多。</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <h3>Supabase Automatic Embeddings：pgmq + pg_cron + pg_net + Edge Function</h3>
+            <p><strong>定位：</strong>Supabase 的方案是社区 Postgres 组合式路线，核心是把 embedding 生成做成数据库内可观察的异步队列任务，实际模型调用由 Edge Function 完成。</p>
+            <h4>核心组件</h4>
+            <ul>
+              <li><strong>pgvector：</strong>存储和查询 embedding。</li>
+              <li><strong>触发器：</strong>INSERT/UPDATE 时把 embedding job 写入 pgmq；部分实现会先把 embedding 置空或标记 pending。</li>
+              <li><strong>pgmq：</strong>队列、visibility timeout、read/delete/archive。</li>
+              <li><strong>pg_cron：</strong>周期性运行队列处理 SQL，例如每 10 秒批量读消息。</li>
+              <li><strong>pg_net：</strong>从数据库异步 HTTP 调 Supabase Edge Function。</li>
+              <li><strong>Edge Function：</strong>调用 OpenAI 或其他 provider，回写数据库并删除队列消息。</li>
+            </ul>
+            <h4>数据流程</h4>
+            <pre><code>INSERT/UPDATE source row
+  -> trigger queues job in pgmq
+  -> pg_cron calls process_embedding_jobs()
+  -> process function batches messages
+  -> pg_net.http_post(Edge Function)
+  -> Edge Function calls embedding provider
+  -> UPDATE source.embedding
+  -> pgmq.delete(message) on success
+  -> failure: message visible again after VT</code></pre>
+            <h4>一致性与失败语义</h4>
+            <p>Supabase 文档明确这是异步 pipeline：刚插入或更新后，embedding 可能暂时为空或旧值，稍后由 Edge Function 补齐。失败后消息留在队列里，visibility timeout 到期后由下一次 cron 继续处理。</p>
+            <h4>优势与风险</h4>
+            <ul>
+              <li><strong>优势：</strong>全部由开源/托管 Postgres 扩展组合而成，便于迁移到社区 PG；队列可查、可重试、可归档。</li>
+              <li><strong>风险：</strong>pg_cron 轮询粒度影响实时性；Edge Function 并发和 provider key 管理要单独做；默认样例更偏参考实现，不等于完整产品能力。</li>
+              <li><strong>与腾讯差异：</strong>两者都使用 pgmq 思路；腾讯用数据库 bgworker 常驻消费，Supabase 用 pg_cron + HTTP Edge Function 外置消费。</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <h3>MongoDB autoEmbed：索引级托管 embedding</h3>
+            <p><strong>定位：</strong>MongoDB Atlas Automated Embedding 把向量化嵌入 Vector Search 索引生命周期。用户定义 <code>autoEmbed</code> 字段后，Atlas 在索引构建、文档插入/更新和查询时自动调用 Voyage AI 模型。</p>
+            <h4>核心组件</h4>
+            <ul>
+              <li><strong>autoEmbed index field：</strong>声明原始文本字段、模型、相似度和过滤字段。</li>
+              <li><strong>Voyage AI 模型服务：</strong>Atlas 托管和管理 embedding 模型。</li>
+              <li><strong>内部生成向量集合：</strong>生成的 embedding 异步存储在同集群的 <code>__mdb_internal_search</code> 内部数据库/集合。</li>
+              <li><strong>$vectorSearch query.text：</strong>查询时可直接传文本，MongoDB 生成 query embedding 后检索。</li>
+            </ul>
+            <h4>数据流程</h4>
+            <pre><code>Create Vector Search index with autoEmbed
+  -> initial sync scans indexed text field
+  -> Atlas sends text to Voyage AI
+  -> embeddings stored in __mdb_internal_search
+  -> insert/update indexed field triggers async re-embedding
+  -> $vectorSearch { query: { text: "..." } }
+  -> query text embedded with same/compatible model
+  -> vector search returns ranked documents</code></pre>
+            <h4>一致性与失败语义</h4>
+            <p>这是索引最终一致：文档写入后要等待索引构建/更新完成才可被语义检索到。MongoDB 文档强调 index-time 和 query-time 使用同一或兼容模型；模型不兼容会导致向量空间错配。Atlas 还对首次构建、增量更新和查询分别做速率隔离。</p>
+            <h4>优势与风险</h4>
+            <ul>
+              <li><strong>优势：</strong>开发者不需要管理向量列、worker、队列和 query embedding；字段级体验最接近“开箱即用”。</li>
+              <li><strong>风险：</strong>模型选择和内部存储受 Atlas 托管能力限制；成本按 index/query token 计；复杂重嵌入和跨平台迁移可控性弱于自建 PG。</li>
+              <li><strong>与腾讯差异：</strong>腾讯暴露数据库任务和 vector 列，用户可 SQL 观测；MongoDB 把 embedding 作为搜索索引内部资产，用户更少接触底层实现。</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <h3>PolarSearch AutoETL：PolarDB 变更同步 + 搜索侧 ingestion pipeline</h3>
+            <p><strong>定位：</strong>PolarSearch 是 PolarDB 的分布式搜索/分析引擎，兼容 Elasticsearch/OpenSearch 生态。AutoETL 负责把 PolarDB 表变化同步到 PolarSearch；向量化发生在 PolarSearch ingestion pipeline 中。</p>
+            <h4>核心组件</h4>
+            <ul>
+              <li><strong>PolarDB 源表：</strong>业务数据仍写在 PolarDB。</li>
+              <li><strong>AutoETL 同步任务：</strong>通过如 <code>dbms_etl.sync_by_map</code> 创建表到索引的映射，捕获 insert/update/delete。</li>
+              <li><strong>PolarSearch index：</strong>保存原始字段、向量字段、全文字段和标量过滤字段。</li>
+              <li><strong>ingestion pipeline / text_embedding processor：</strong>写入索引前读取指定文本字段，调用外部 embedding 模型并写入 knn_vector 字段。</li>
+              <li><strong>search pipeline / rerank processor：</strong>查询阶段可先 neural/vector 检索，再 rerank，最后进入 RAG 生成。</li>
+            </ul>
+            <h4>数据流程</h4>
+            <pre><code>PolarDB table insert/update/delete
+  -> AutoETL captures changes
+  -> stream document to PolarSearch index
+  -> default ingestion pipeline intercepts document
+  -> text_embedding processor calls external embedding model
+  -> write raw text + vector field into index
+  -> query pipeline: neural retrieval -> rerank -> RAG</code></pre>
+            <h4>一致性与失败语义</h4>
+            <p>这是跨系统近实时一致。源库提交后，搜索索引和向量字段通过 AutoETL 异步追赶。优点是不会污染 OLTP 写路径；风险是同步延迟、pipeline 失败、模型限流会让搜索索引滞后。删除操作也必须正确映射到 PolarSearch，否则会出现搜索侧残留。</p>
+            <h4>优势与风险</h4>
+            <ul>
+              <li><strong>优势：</strong>适合全文 + 向量 + 标量混合检索，搜索节点可独立扩展；ingestion/search pipeline 能自然加入 embedding 和 rerank。</li>
+              <li><strong>风险：</strong>不是源数据库内强一致；调试要跨 PolarDB、AutoETL、模型服务和 PolarSearch 多个系统；对 PG 原生 SQL 使用者心智更高。</li>
+              <li><strong>与腾讯差异：</strong>腾讯在同一个 PostgreSQL 实例内写回 vector 列；PolarSearch 把向量资产同步到搜索引擎，更像“数据库 + 搜索平台”的架构。</li>
+            </ul>
+          </article>
+
+          <article class="card">
+            <h3>PolarDB polar_ai：数据库内 embedding 函数/生成列</h3>
+            <p><strong>定位：</strong>PolarDB for PostgreSQL 的 <code>polar_ai</code> 路线更接近“数据库内函数 + pgvector”。用户通过 <code>polar_ai.ai_text_embedding()</code> 将文本转换为向量，并可把它定义为 STORED generated column，再用 HNSW/IVFFlat 索引。</p>
+            <h4>核心组件</h4>
+            <ul>
+              <li><strong>polar_ai：</strong>提供文本转向量函数，可连接内置或自定义模型能力。</li>
+              <li><strong>pgvector / VECTOR 类型：</strong>存储 embedding，支持距离算子。</li>
+              <li><strong>STORED generated column：</strong>在写入/更新时根据文本表达式生成向量。</li>
+              <li><strong>HNSW / IVFFlat：</strong>对 generated vector column 建 ANN 索引。</li>
+            </ul>
+            <h4>数据流程</h4>
+            <pre><code>ALTER TABLE items
+  ADD COLUMN embedding_vec vector(1536)
+  GENERATED ALWAYS AS (
+    polar_ai.ai_text_embedding(description)
+  ) STORED;
+
+INSERT/UPDATE description
+  -> generated column expression executes
+  -> embedding_vec materialized
+  -> HNSW/IVFFlat index maintained
+  -> query uses ORDER BY embedding_vec <-> polar_ai.ai_text_embedding(query)</code></pre>
+            <h4>一致性与失败语义</h4>
+            <p>STORED generated column 语义上接近同步：源字段变化时向量列随写入计算并物化，查询立即能看到匹配的向量。但这也意味着模型调用延迟和失败会进入写事务；如果 embedding 函数调用远程模型，高频写入风险类似 Aurora aws_ml 同步模式。</p>
+            <h4>优势与风险</h4>
+            <ul>
+              <li><strong>优势：</strong>DDL 简洁，和 pgvector 查询天然结合；适合短文本、低频写入、需要写后立即检索的场景。</li>
+              <li><strong>风险：</strong>不适合长文档一对多 chunk；模型调用失败可能导致业务写入失败；模型版本升级需要重写 generated column 或新列/新索引。</li>
+              <li><strong>与腾讯差异：</strong>腾讯选择异步任务系统降低写路径风险；polar_ai generated column 选择同步物化换取语义简单。</li>
+            </ul>
+          </article>
+        </div>
+
+        <h3>4.6 一致性语义</h3>
+        <ul>
+          <li><strong>强一致：</strong>同步事务内生成向量；代价是写入延迟、失败传播和模型服务耦合。</li>
+          <li><strong>读己之写但向量延迟：</strong>主数据可立即读到，向量字段异步补齐；大多数 Auto Embedding 产品采用此模式。</li>
+          <li><strong>近实时索引：</strong>Snowflake/Databricks/PolarSearch 这类服务通常按刷新或同步管道维护索引，适合搜索和分析，不适合严格事务语义。</li>
+        </ul>
+
+        <h3>4.7 生产系统必须补齐的元数据</h3>
+        <pre><code>recommended columns:
+  source_hash          -- 源字段归一化后的 hash，用于判断过期写回
+  embedding_model      -- 模型名称，如 hunyuan-embedding / gemini-embedding-001
+  embedding_version    -- 模型版本或端点版本
+  embedding_dim        -- 向量维度
+  embedding_status     -- pending / ready / failed / stale
+  embedding_updated_at -- 最近成功生成时间
+  embedding_error      -- 最近错误摘要
+  chunk_id / parent_id -- 文档分块场景的父子关系
+  acl / tenant_id      -- 过滤检索必须下推的安全字段</code></pre>
       </section>
 
       <section id="industry">
@@ -958,269 +1218,8 @@
         </div>
       </section>
 
-      <section id="patterns">
-        <h2>6. 架构模式对比</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>模式</th>
-                <th>典型厂商/产品</th>
-                <th>优点</th>
-                <th>缺点</th>
-                <th>适用场景</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>同步触发器调用模型</td>
-                <td>Aurora aws_ml、Oracle 自建触发器</td>
-                <td>实现简单，向量与事务接近强一致。</td>
-                <td>模型调用延迟和失败会放大写事务风险，不适合高 QPS 写入。</td>
-                <td>低频写入、对新鲜度要求极高、可接受写入延迟的内部系统。</td>
-              </tr>
-              <tr>
-                <td>触发器 + 队列 + 后台 worker</td>
-                <td>TencentDB、Supabase、Aurora SQS/Lambda</td>
-                <td>解耦事务和模型调用，支持批处理、重试和限流。</td>
-                <td>最终一致，需要积压监控、幂等设计、过期写回防护。</td>
-                <td>在线业务表、RAG 知识库、商品/内容语义索引。</td>
-              </tr>
-              <tr>
-                <td>字段/索引级自动 Embedding</td>
-                <td>MongoDB autoEmbed、Elastic semantic_text、Snowflake Cortex Search</td>
-                <td>接入最简单，查询侧也可自动向量化，开发者心智成本低。</td>
-                <td>模型、成本、索引内部细节受托管服务控制；跨云迁移较难。</td>
-                <td>快速构建 AI Search、Agent memory、企业知识库。</td>
-              </tr>
-              <tr>
-                <td>CDC/湖仓同步索引</td>
-                <td>Databricks Delta Sync、PolarSearch AutoETL</td>
-                <td>适合批流一体和大规模离线/近实时数据，治理和血缘较好。</td>
-                <td>端到端延迟通常高于事务触发器；依赖同步管道。</td>
-                <td>湖仓数据、日志、文档资产、BI + RAG。</td>
-              </tr>
-              <tr>
-                <td>数据库内推理</td>
-                <td>Oracle ONNX、AlloyDB google_ml、PolarDB polar_ai</td>
-                <td>减少数据出库，权限边界清晰，可用 SQL 编排。</td>
-                <td>模型格式、硬件、版本升级受限；复杂模型可能不适合数据库进程。</td>
-                <td>私有化部署、合规数据、稳定模型的批量生成。</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3>6.1 代表方案详细拆解</h3>
-        <p>
-          下列六类方案与腾讯 Auto Embedding 解决的是同一类问题，但系统边界不同：有的把模型调用放在数据库事务内，有的把任务交给云函数/队列，有的把向量化嵌进搜索索引或同步管道。
-          因此不能只比较“是否自动”，而要比较写入路径是否阻塞、谁负责重试、向量存在哪里、查询侧是否自动向量化，以及模型/索引版本如何治理。
-        </p>
-
-        <div class="grid cols-2">
-          <article class="card">
-            <h3>Aurora aws_ml：数据库内同步调用 Bedrock</h3>
-            <p><strong>定位：</strong>这是 Aurora PostgreSQL 的 Aurora Machine Learning 路线，通过 <code>aws_ml</code> 扩展暴露 <code>aws_bedrock.invoke_model_get_embeddings</code> 等 SQL 函数，让数据库函数直接调用 Amazon Bedrock 生成 embedding。</p>
-            <h4>核心组件</h4>
-            <ul>
-              <li><strong>pgvector：</strong>负责 vector 列和 HNSW/IVFFlat 检索。</li>
-              <li><strong>aws_ml / aws_bedrock schema：</strong>提供 <code>invoke_model</code> 与 <code>invoke_model_get_embeddings</code>。</li>
-              <li><strong>IAM role：</strong>Aurora 集群需要具备访问 Bedrock 的权限。</li>
-              <li><strong>触发器或存储过程：</strong>捕获 INSERT/UPDATE 或批量扫描 NULL embedding 行。</li>
-            </ul>
-            <h4>数据流程</h4>
-            <pre><code>INSERT/UPDATE documents
-  -> trigger / stored procedure
-  -> aws_bedrock.invoke_model_get_embeddings(
-       model_id, content_type, json_key, model_input)
-  -> 返回 float8[] / 转 vector
-  -> UPDATE documents.embedding
-  -> pgvector 查询</code></pre>
-            <h4>一致性与失败语义</h4>
-            <p>如果在触发器中同步调用，向量可以接近事务内一致；但 Bedrock 单次调用可能达到百毫秒级，模型超时、限流或 IAM 错误会直接影响写事务。AWS 博客也建议批量过程要分批提交，避免单个长事务阻塞。</p>
-            <h4>优势与风险</h4>
-            <ul>
-              <li><strong>优势：</strong>SQL 内完成闭环，架构最简单；适合低频写入、后台批量补齐、管理脚本。</li>
-              <li><strong>风险：</strong>把外部模型 SLA 引入数据库事务；高 QPS 写入场景不建议用同步触发器。</li>
-              <li><strong>与腾讯差异：</strong>腾讯 Auto Embedding 把模型调用放到 bgworker 异步执行；Aurora aws_ml 模式更像“数据库内模型调用原语”，任务系统需要用户自己搭。</li>
-            </ul>
-          </article>
-
-          <article class="card">
-            <h3>Aurora SQS/Lambda：云原生异步队列 + 批处理</h3>
-            <p><strong>定位：</strong>这是 AWS 官方样例中更适合生产高吞吐的模式。数据库触发器不直接调 Bedrock，而是发布轻量事件；SQS/Lambda 负责削峰、批量、重试和横向扩容。</p>
-            <h4>核心组件</h4>
-            <ul>
-              <li><strong>Aurora PostgreSQL + pgvector：</strong>存源数据和向量。</li>
-              <li><strong>触发器 / 事件表 / aws_lambda 扩展：</strong>把 row id、操作类型、版本信息发布到异步链路。</li>
-              <li><strong>Amazon SQS：</strong>提供持久队列、visibility timeout、重试和 dead-letter queue。</li>
-              <li><strong>Lambda worker：</strong>批量读取源行、调用 Bedrock embedding、写回 Aurora。</li>
-              <li><strong>RDS Proxy：</strong>缓解 Lambda 并发连接数据库的问题。</li>
-            </ul>
-            <h4>数据流程</h4>
-            <pre><code>INSERT/UPDATE
-  -> DB trigger marks row pending / emits event
-  -> async Lambda or SQS message
-  -> Lambda batch reads N row ids
-  -> fetch latest text from Aurora
-  -> call Bedrock embedding in batch
-  -> update embedding/status/source_hash
-  -> delete SQS message or let it retry</code></pre>
-            <h4>一致性与失败语义</h4>
-            <p>这是最终一致模型。SQS 保证消息在 visibility timeout 后可重试，Lambda 失败可进入 DLQ。若 worker 写回前不校验 source_hash，仍可能把旧文本向量写回；因此生产实现应学习腾讯的“消费时重读 + 写回前比对”。</p>
-            <h4>优势与风险</h4>
-            <ul>
-              <li><strong>优势：</strong>扩展性和隔离性好；Bedrock 限流、网络失败不会直接拖垮数据库事务；SQS/Lambda 生态成熟。</li>
-              <li><strong>风险：</strong>组件多，VPC、IAM、RDS Proxy、DLQ、幂等写回都要用户设计；跨组件排障比数据库内 bgworker 复杂。</li>
-              <li><strong>与腾讯差异：</strong>腾讯把队列和 worker 封装到数据库扩展；AWS 模式把队列和 worker 外置到云服务，弹性更强但工程拼装更多。</li>
-            </ul>
-          </article>
-
-          <article class="card">
-            <h3>Supabase Automatic Embeddings：pgmq + pg_cron + pg_net + Edge Function</h3>
-            <p><strong>定位：</strong>Supabase 的方案是社区 Postgres 组合式路线，核心是把 embedding 生成做成数据库内可观察的异步队列任务，实际模型调用由 Edge Function 完成。</p>
-            <h4>核心组件</h4>
-            <ul>
-              <li><strong>pgvector：</strong>存储和查询 embedding。</li>
-              <li><strong>触发器：</strong>INSERT/UPDATE 时把 embedding job 写入 pgmq；部分实现会先把 embedding 置空或标记 pending。</li>
-              <li><strong>pgmq：</strong>队列、visibility timeout、read/delete/archive。</li>
-              <li><strong>pg_cron：</strong>周期性运行队列处理 SQL，例如每 10 秒批量读消息。</li>
-              <li><strong>pg_net：</strong>从数据库异步 HTTP 调 Supabase Edge Function。</li>
-              <li><strong>Edge Function：</strong>调用 OpenAI 或其他 provider，回写数据库并删除队列消息。</li>
-            </ul>
-            <h4>数据流程</h4>
-            <pre><code>INSERT/UPDATE source row
-  -> trigger queues job in pgmq
-  -> pg_cron calls process_embedding_jobs()
-  -> process function batches messages
-  -> pg_net.http_post(Edge Function)
-  -> Edge Function calls embedding provider
-  -> UPDATE source.embedding
-  -> pgmq.delete(message) on success
-  -> failure: message visible again after VT</code></pre>
-            <h4>一致性与失败语义</h4>
-            <p>Supabase 文档明确这是异步 pipeline：刚插入或更新后，embedding 可能暂时为空或旧值，稍后由 Edge Function 补齐。失败后消息留在队列里，visibility timeout 到期后由下一次 cron 继续处理。</p>
-            <h4>优势与风险</h4>
-            <ul>
-              <li><strong>优势：</strong>全部由开源/托管 Postgres 扩展组合而成，便于迁移到社区 PG；队列可查、可重试、可归档。</li>
-              <li><strong>风险：</strong>pg_cron 轮询粒度影响实时性；Edge Function 并发和 provider key 管理要单独做；默认样例更偏参考实现，不等于完整产品能力。</li>
-              <li><strong>与腾讯差异：</strong>两者都使用 pgmq 思路；腾讯用数据库 bgworker 常驻消费，Supabase 用 pg_cron + HTTP Edge Function 外置消费。</li>
-            </ul>
-          </article>
-
-          <article class="card">
-            <h3>MongoDB autoEmbed：索引级托管 embedding</h3>
-            <p><strong>定位：</strong>MongoDB Atlas Automated Embedding 把向量化嵌入 Vector Search 索引生命周期。用户定义 <code>autoEmbed</code> 字段后，Atlas 在索引构建、文档插入/更新和查询时自动调用 Voyage AI 模型。</p>
-            <h4>核心组件</h4>
-            <ul>
-              <li><strong>autoEmbed index field：</strong>声明原始文本字段、模型、相似度和过滤字段。</li>
-              <li><strong>Voyage AI 模型服务：</strong>Atlas 托管和管理 embedding 模型。</li>
-              <li><strong>内部生成向量集合：</strong>生成的 embedding 异步存储在同集群的 <code>__mdb_internal_search</code> 内部数据库/集合。</li>
-              <li><strong>$vectorSearch query.text：</strong>查询时可直接传文本，MongoDB 生成 query embedding 后检索。</li>
-            </ul>
-            <h4>数据流程</h4>
-            <pre><code>Create Vector Search index with autoEmbed
-  -> initial sync scans indexed text field
-  -> Atlas sends text to Voyage AI
-  -> embeddings stored in __mdb_internal_search
-  -> insert/update indexed field triggers async re-embedding
-  -> $vectorSearch { query: { text: "..." } }
-  -> query text embedded with same/compatible model
-  -> vector search returns ranked documents</code></pre>
-            <h4>一致性与失败语义</h4>
-            <p>这是索引最终一致：文档写入后要等待索引构建/更新完成才可被语义检索到。MongoDB 文档强调 index-time 和 query-time 使用同一或兼容模型；模型不兼容会导致向量空间错配。Atlas 还对首次构建、增量更新和查询分别做速率隔离。</p>
-            <h4>优势与风险</h4>
-            <ul>
-              <li><strong>优势：</strong>开发者不需要管理向量列、worker、队列和 query embedding；字段级体验最接近“开箱即用”。</li>
-              <li><strong>风险：</strong>模型选择和内部存储受 Atlas 托管能力限制；成本按 index/query token 计；复杂重嵌入和跨平台迁移可控性弱于自建 PG。</li>
-              <li><strong>与腾讯差异：</strong>腾讯暴露数据库任务和 vector 列，用户可 SQL 观测；MongoDB 把 embedding 作为搜索索引内部资产，用户更少接触底层实现。</li>
-            </ul>
-          </article>
-
-          <article class="card">
-            <h3>PolarSearch AutoETL：PolarDB 变更同步 + 搜索侧 ingestion pipeline</h3>
-            <p><strong>定位：</strong>PolarSearch 是 PolarDB 的分布式搜索/分析引擎，兼容 Elasticsearch/OpenSearch 生态。AutoETL 负责把 PolarDB 表变化同步到 PolarSearch；向量化发生在 PolarSearch ingestion pipeline 中。</p>
-            <h4>核心组件</h4>
-            <ul>
-              <li><strong>PolarDB 源表：</strong>业务数据仍写在 PolarDB。</li>
-              <li><strong>AutoETL 同步任务：</strong>通过如 <code>dbms_etl.sync_by_map</code> 创建表到索引的映射，捕获 insert/update/delete。</li>
-              <li><strong>PolarSearch index：</strong>保存原始字段、向量字段、全文字段和标量过滤字段。</li>
-              <li><strong>ingestion pipeline / text_embedding processor：</strong>写入索引前读取指定文本字段，调用外部 embedding 模型并写入 knn_vector 字段。</li>
-              <li><strong>search pipeline / rerank processor：</strong>查询阶段可先 neural/vector 检索，再 rerank，最后进入 RAG 生成。</li>
-            </ul>
-            <h4>数据流程</h4>
-            <pre><code>PolarDB table insert/update/delete
-  -> AutoETL captures changes
-  -> stream document to PolarSearch index
-  -> default ingestion pipeline intercepts document
-  -> text_embedding processor calls external embedding model
-  -> write raw text + vector field into index
-  -> query pipeline: neural retrieval -> rerank -> RAG</code></pre>
-            <h4>一致性与失败语义</h4>
-            <p>这是跨系统近实时一致。源库提交后，搜索索引和向量字段通过 AutoETL 异步追赶。优点是不会污染 OLTP 写路径；风险是同步延迟、pipeline 失败、模型限流会让搜索索引滞后。删除操作也必须正确映射到 PolarSearch，否则会出现搜索侧残留。</p>
-            <h4>优势与风险</h4>
-            <ul>
-              <li><strong>优势：</strong>适合全文 + 向量 + 标量混合检索，搜索节点可独立扩展；ingestion/search pipeline 能自然加入 embedding 和 rerank。</li>
-              <li><strong>风险：</strong>不是源数据库内强一致；调试要跨 PolarDB、AutoETL、模型服务和 PolarSearch 多个系统；对 PG 原生 SQL 使用者心智更高。</li>
-              <li><strong>与腾讯差异：</strong>腾讯在同一个 PostgreSQL 实例内写回 vector 列；PolarSearch 把向量资产同步到搜索引擎，更像“数据库 + 搜索平台”的架构。</li>
-            </ul>
-          </article>
-
-          <article class="card">
-            <h3>PolarDB polar_ai：数据库内 embedding 函数/生成列</h3>
-            <p><strong>定位：</strong>PolarDB for PostgreSQL 的 <code>polar_ai</code> 路线更接近“数据库内函数 + pgvector”。用户通过 <code>polar_ai.ai_text_embedding()</code> 将文本转换为向量，并可把它定义为 STORED generated column，再用 HNSW/IVFFlat 索引。</p>
-            <h4>核心组件</h4>
-            <ul>
-              <li><strong>polar_ai：</strong>提供文本转向量函数，可连接内置或自定义模型能力。</li>
-              <li><strong>pgvector / VECTOR 类型：</strong>存储 embedding，支持距离算子。</li>
-              <li><strong>STORED generated column：</strong>在写入/更新时根据文本表达式生成向量。</li>
-              <li><strong>HNSW / IVFFlat：</strong>对 generated vector column 建 ANN 索引。</li>
-            </ul>
-            <h4>数据流程</h4>
-            <pre><code>ALTER TABLE items
-  ADD COLUMN embedding_vec vector(1536)
-  GENERATED ALWAYS AS (
-    polar_ai.ai_text_embedding(description)
-  ) STORED;
-
-INSERT/UPDATE description
-  -> generated column expression executes
-  -> embedding_vec materialized
-  -> HNSW/IVFFlat index maintained
-  -> query uses ORDER BY embedding_vec <-> polar_ai.ai_text_embedding(query)</code></pre>
-            <h4>一致性与失败语义</h4>
-            <p>STORED generated column 语义上接近同步：源字段变化时向量列随写入计算并物化，查询立即能看到匹配的向量。但这也意味着模型调用延迟和失败会进入写事务；如果 embedding 函数调用远程模型，高频写入风险类似 Aurora aws_ml 同步模式。</p>
-            <h4>优势与风险</h4>
-            <ul>
-              <li><strong>优势：</strong>DDL 简洁，和 pgvector 查询天然结合；适合短文本、低频写入、需要写后立即检索的场景。</li>
-              <li><strong>风险：</strong>不适合长文档一对多 chunk；模型调用失败可能导致业务写入失败；模型版本升级需要重写 generated column 或新列/新索引。</li>
-              <li><strong>与腾讯差异：</strong>腾讯选择异步任务系统降低写路径风险；polar_ai generated column 选择同步物化换取语义简单。</li>
-            </ul>
-          </article>
-        </div>
-
-        <h3>6.2 一致性语义</h3>
-        <ul>
-          <li><strong>强一致：</strong>同步事务内生成向量；代价是写入延迟、失败传播和模型服务耦合。</li>
-          <li><strong>读己之写但向量延迟：</strong>主数据可立即读到，向量字段异步补齐；大多数 Auto Embedding 产品采用此模式。</li>
-          <li><strong>近实时索引：</strong>Snowflake/Databricks/PolarSearch 这类服务通常按刷新或同步管道维护索引，适合搜索和分析，不适合严格事务语义。</li>
-        </ul>
-
-        <h3>6.3 生产系统必须补齐的元数据</h3>
-        <pre><code>recommended columns:
-  source_hash          -- 源字段归一化后的 hash，用于判断过期写回
-  embedding_model      -- 模型名称，如 hunyuan-embedding / gemini-embedding-001
-  embedding_version    -- 模型版本或端点版本
-  embedding_dim        -- 向量维度
-  embedding_status     -- pending / ready / failed / stale
-  embedding_updated_at -- 最近成功生成时间
-  embedding_error      -- 最近错误摘要
-  chunk_id / parent_id -- 文档分块场景的父子关系
-  acl / tenant_id      -- 过滤检索必须下推的安全字段</code></pre>
-      </section>
-
       <section id="academic">
-        <h2>7. 学术层面的最新方案与趋势</h2>
+        <h2>6. 学术层面的最新方案与趋势</h2>
         <p>
           学术界并不常把问题命名为 Auto Embedding，但其关键技术分散在向量数据库、混合检索、动态 ANN、表示学习、数据库查询优化和 RAG 系统中。
           与产业落地最相关的方向如下。
@@ -1270,7 +1269,7 @@ INSERT/UPDATE description
           </article>
         </div>
 
-        <h3>7.1 对 Auto Embedding 产品的影响</h3>
+        <h3>6.1 对 Auto Embedding 产品的影响</h3>
         <ul>
           <li><strong>从“生成向量”升级为“生成可治理的检索资产”：</strong>模型版本、分块版本、维度版本和评测集会成为数据库元数据。</li>
           <li><strong>过滤检索会成为核心卖点：</strong>企业 RAG 几乎总带 tenant、ACL、时间、品类、地域过滤；ACORN/VBase 类研究会进入主流数据库优化器。</li>
@@ -1281,13 +1280,13 @@ INSERT/UPDATE description
       </section>
 
       <section id="pg18-design">
-        <h2>8. 基于社区 PostgreSQL 18 的 Auto Embedding 方案设计</h2>
+        <h2>7. 基于社区 PostgreSQL 18 的 Auto Embedding 方案设计</h2>
         <p>
           目标是在不依赖云厂商闭源能力的前提下，基于社区 PostgreSQL 18、pgvector 0.8+、pgmq（或等价队列表）、外部 worker 和可选 pgai 能力，设计一个可落地的 Auto Embedding 系统。
           该方案刻意不把模型 HTTP 调用放进业务事务，也不要求修改 PostgreSQL 内核；它把 embedding 看成类似全文索引/物化视图的派生资产，通过元数据、队列和 worker 保持最终一致。
         </p>
 
-        <h3>8.1 设计目标与非目标</h3>
+        <h3>7.1 设计目标与非目标</h3>
         <div class="grid cols-2">
           <div class="card">
             <h3>目标</h3>
@@ -1310,7 +1309,7 @@ INSERT/UPDATE description
           </div>
         </div>
 
-        <h3>8.2 PG18 能力如何被利用</h3>
+        <h3>7.2 PG18 能力如何被利用</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1360,7 +1359,7 @@ INSERT/UPDATE description
           </table>
         </div>
 
-        <h3>8.3 总体架构</h3>
+        <h3>7.3 总体架构</h3>
         <pre><code>业务写入
   -> AFTER INSERT/UPDATE/DELETE 触发器只写轻量 job(row_pk, source_hash, op, vectorizer_id)
   -> pgmq / ae_job_queue 持久化任务，并 NOTIFY worker
@@ -1371,7 +1370,7 @@ INSERT/UPDATE description
   -> 标记 job done；失败则按指数退避设置 next_run_at，超过阈值进 dead-letter
   -> 查询 API 使用同一 model_version 生成 query embedding，走 pgvector + metadata filter + optional rerank</code></pre>
 
-        <h3>8.4 元数据表设计</h3>
+        <h3>7.4 元数据表设计</h3>
         <pre><code>CREATE SCHEMA IF NOT EXISTS autoembed;
 
 CREATE TABLE autoembed.vectorizer (
@@ -1445,7 +1444,7 @@ CREATE INDEX ON kb_article_embedding
   USING hnsw (embedding halfvec_cosine_ops)
   WITH (m = 16, ef_construction = 128);</code></pre>
 
-        <h3>8.5 SQL API 设计</h3>
+        <h3>7.5 SQL API 设计</h3>
         <p>借鉴 pgai 的 DSL，但加入版本治理、回填策略和查询侧模型约束：</p>
         <pre><code>SELECT autoembed.create_vectorizer(
   name               => 'kb_article_v1',
@@ -1471,7 +1470,7 @@ CREATE INDEX ON kb_article_embedding
           PG18 virtual generated column 是读时计算，不适合触发外部模型调用；stored generated column 是写时计算，会把模型延迟放进事务。正确做法是 generated column 只生成轻量、确定性的 <code>source_hash</code> 或文本规范化结果，模型调用交给异步 worker。
         </div>
 
-        <h3>8.6 worker 处理语义</h3>
+        <h3>7.6 worker 处理语义</h3>
         <ol>
           <li><strong>取任务：</strong>按 <code>next_run_at</code>、priority、vectorizer_id 拉取，使用 pgmq visibility timeout 或 <code>FOR UPDATE SKIP LOCKED</code>，避免多 worker 重复处理。</li>
           <li><strong>回源读取：</strong>队列只存主键和 source_hash，worker 处理前重新读取当前源行，防止旧消息携带旧文本。</li>
@@ -1497,7 +1496,7 @@ FROM picked
 WHERE j.job_id = picked.job_id
 RETURNING j.*;</code></pre>
 
-        <h3>8.7 查询 API 与过滤检索策略</h3>
+        <h3>7.7 查询 API 与过滤检索策略</h3>
         <pre><code>CREATE OR REPLACE FUNCTION autoembed.search(
   vectorizer_name text,
   query_text text,
@@ -1529,7 +1528,7 @@ $$;</code></pre>
           如果过滤条件极端选择性（例如 tenant + ACL 后只剩万分之一数据），单纯 HNSW 后过滤仍可能不稳定，此时应考虑分区、分租户索引、预过滤候选集 rerank，或接入 ACORN/DiskANN 类系统。
         </p>
 
-        <h3>8.8 模型升级与蓝绿重嵌入</h3>
+        <h3>7.8 模型升级与蓝绿重嵌入</h3>
         <div class="flow">
           <div><strong>注册新版本</strong><br><span class="muted">vectorizer v2，模型/维度/格式配置冻结</span></div>
           <div><strong>新目的地</strong><br><span class="muted">新列或新 embedding table，避免覆盖 v1</span></div>
@@ -1539,7 +1538,7 @@ $$;</code></pre>
           <div><strong>延迟清理</strong><br><span class="muted">保留回滚窗口后删除旧索引</span></div>
         </div>
 
-        <h3>8.9 安全与运维</h3>
+        <h3>7.9 安全与运维</h3>
         <ul>
           <li><strong>密钥：</strong>数据库只保存 secret 引用，worker 从 Vault/KMS 取真实密钥；避免把 provider key 存在普通表。</li>
           <li><strong>权限：</strong>DDL/API 用 <code>SECURITY DEFINER</code> 收敛权限；用户只能操作自己拥有的 source table。</li>
@@ -1549,7 +1548,7 @@ $$;</code></pre>
           <li><strong>清理：</strong>DELETE 源行触发删除 embedding；模型版本下线后清理旧 embedding 和旧 HNSW 索引。</li>
         </ul>
 
-        <h3>8.10 MVP 到生产路线</h3>
+        <h3>7.10 MVP 到生产路线</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1586,7 +1585,7 @@ $$;</code></pre>
       </section>
 
       <section id="evaluation">
-        <h2>9. 工程评估框架</h2>
+        <h2>8. 工程评估框架</h2>
         <div class="grid cols-2">
           <div class="card">
             <h3>功能维度</h3>
@@ -1632,8 +1631,8 @@ $$;</code></pre>
       </section>
 
       <section id="recommendations">
-        <h2>10. 选型建议</h2>
-        <h3>10.1 按业务场景选择</h3>
+        <h2>9. 选型建议</h2>
+        <h3>9.1 按业务场景选择</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1679,7 +1678,7 @@ $$;</code></pre>
           </table>
         </div>
 
-        <h3>10.2 对腾讯云 Auto Embedding 的改进建议</h3>
+        <h3>9.2 对腾讯云 Auto Embedding 的改进建议</h3>
         <ol>
           <li><strong>显式加入模型版本与 source_hash：</strong>文档可建议目标表增加 <code>embedding_model_version</code>、<code>source_hash</code>，便于过期向量检测和重嵌入。</li>
           <li><strong>提供查询侧向量化封装：</strong>类似 MongoDB/Elastic，支持在检索函数中直接传文本 query，并自动使用任务同款模型生成 query embedding。</li>
@@ -1693,7 +1692,7 @@ $$;</code></pre>
           <strong>不建议盲目使用 Auto Embedding 的情况：</strong>源表写入极高且对事务延迟极敏感；数据包含不可出域敏感内容但模型服务在外网；embedding 模型频繁切换但没有版本治理；检索强依赖 ACL 过滤但向量索引不支持过滤下推。
         </div>
 
-        <h3>10.3 如果基于社区 PG18 自研，建议采用的默认技术栈</h3>
+        <h3>9.3 如果基于社区 PG18 自研，建议采用的默认技术栈</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1735,7 +1734,7 @@ $$;</code></pre>
       </section>
 
       <section id="sources">
-        <h2>11. 参考资料</h2>
+        <h2>10. 参考资料</h2>
         <ol class="source-list">
           <li><a href="https://cloud.tencent.com/document/product/409/133912" target="_blank" rel="noreferrer">腾讯云：云数据库 PostgreSQL 自动向量化</a></li>
           <li><a href="https://cloud.tencent.com/document/product/409/67017" target="_blank" rel="noreferrer">腾讯云：云数据库 PostgreSQL 内核版本更新动态</a></li>
