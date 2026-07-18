@@ -85,6 +85,25 @@
       text-decoration: none;
     }
 
+    .toc-group {
+      display: grid;
+      gap: 4px;
+    }
+
+    .toc-sub {
+      display: grid;
+      gap: 2px;
+      margin: 0 0 2px 12px;
+      padding-left: 10px;
+      border-left: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .toc-sub a {
+      padding: 5px 8px;
+      font-size: 12px;
+      color: #bfdbfe;
+    }
+
     .filter-panel {
       display: grid;
       gap: 10px;
@@ -390,8 +409,18 @@
         <a href="#summary">1. 执行摘要</a>
         <a href="#definition">2. 技术定义与边界</a>
         <a href="#tencent">3. 腾讯云实现拆解</a>
-        <a href="#mechanisms">4. 技术机制分层拆解</a>
-        <a href="#patterns">4.4 架构模式对比</a>
+        <div class="toc-group">
+          <a href="#mechanisms">4. 技术机制分层拆解</a>
+          <div class="toc-sub">
+            <a href="#mechanisms-layers">4.1 六层实现模型</a>
+            <a href="#mechanisms-tradeoffs">4.2 关键技术取舍</a>
+            <a href="#mechanisms-comparison">4.3 真实技术含量比较</a>
+            <a href="#patterns">4.4 架构模式对比</a>
+            <a href="#patterns-vendors">4.5 代表方案详细拆解</a>
+            <a href="#patterns-consistency">4.6 一致性语义</a>
+            <a href="#patterns-metadata">4.7 生产元数据</a>
+          </div>
+        </div>
         <a href="#industry">5. 产业落地与厂商矩阵</a>
         <a href="#academic">6. 学术前沿</a>
         <a href="#pg18-design">7. 社区 PG18 方案设计</a>
@@ -638,7 +667,7 @@
           因此，评价一个方案不能只看“是否自动调用模型”，而要看它如何捕获变化、如何调度失败重试、如何避免过期写回、如何在过滤检索下保持召回，以及如何处理模型版本升级。
         </p>
 
-        <h3>4.1 六层实现模型</h3>
+        <h3 id="mechanisms-layers">4.1 六层实现模型</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -697,7 +726,7 @@
           </table>
         </div>
 
-        <h3>4.2 关键技术取舍</h3>
+        <h3 id="mechanisms-tradeoffs">4.2 关键技术取舍</h3>
         <div class="grid cols-2">
           <div class="card">
             <h3>触发器 vs CDC</h3>
@@ -717,7 +746,7 @@
           </div>
         </div>
 
-        <h3>4.3 各方案的“真实技术含量”比较</h3>
+        <h3 id="mechanisms-comparison">4.3 各方案的“真实技术含量”比较</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -816,7 +845,7 @@
           </table>
         </div>
 
-        <h3>4.5 代表方案详细拆解</h3>
+        <h3 id="patterns-vendors">4.5 代表方案详细拆解</h3>
         <p>
           下列六类方案与腾讯 Auto Embedding 解决的是同一类问题，但系统边界不同：有的把模型调用放在数据库事务内，有的把任务交给云函数/队列，有的把向量化嵌进搜索索引或同步管道。
           因此不能只比较“是否自动”，而要比较写入路径是否阻塞、谁负责重试、向量存在哪里、查询侧是否自动向量化，以及模型/索引版本如何治理。
@@ -1004,14 +1033,14 @@ INSERT/UPDATE description
           </article>
         </div>
 
-        <h3>4.6 一致性语义</h3>
+        <h3 id="patterns-consistency">4.6 一致性语义</h3>
         <ul>
           <li><strong>强一致：</strong>同步事务内生成向量；代价是写入延迟、失败传播和模型服务耦合。</li>
           <li><strong>读己之写但向量延迟：</strong>主数据可立即读到，向量字段异步补齐；大多数 Auto Embedding 产品采用此模式。</li>
           <li><strong>近实时索引：</strong>Snowflake/Databricks/PolarSearch 这类服务通常按刷新或同步管道维护索引，适合搜索和分析，不适合严格事务语义。</li>
         </ul>
 
-        <h3>4.7 生产系统必须补齐的元数据</h3>
+        <h3 id="patterns-metadata">4.7 生产系统必须补齐的元数据</h3>
         <pre><code>recommended columns:
   source_hash          -- 源字段归一化后的 hash，用于判断过期写回
   embedding_model      -- 模型名称，如 hunyuan-embedding / gemini-embedding-001
