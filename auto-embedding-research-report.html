@@ -390,12 +390,14 @@
         <a href="#summary">1. 执行摘要</a>
         <a href="#definition">2. 技术定义与边界</a>
         <a href="#tencent">3. 腾讯云实现拆解</a>
-        <a href="#industry">4. 产业落地与厂商矩阵</a>
-        <a href="#patterns">5. 架构模式对比</a>
-        <a href="#academic">6. 学术前沿</a>
-        <a href="#evaluation">7. 工程评估框架</a>
-        <a href="#recommendations">8. 选型建议</a>
-        <a href="#sources">9. 参考资料</a>
+        <a href="#mechanisms">4. 技术机制分层拆解</a>
+        <a href="#industry">5. 产业落地与厂商矩阵</a>
+        <a href="#patterns">6. 架构模式对比</a>
+        <a href="#academic">7. 学术前沿</a>
+        <a href="#pg18-design">8. 社区 PG18 方案设计</a>
+        <a href="#evaluation">9. 工程评估框架</a>
+        <a href="#recommendations">10. 选型建议</a>
+        <a href="#sources">11. 参考资料</a>
       </nav>
 
       <div class="filter-panel">
@@ -419,6 +421,7 @@
             <option>Oracle</option>
             <option>Microsoft</option>
             <option>Supabase</option>
+            <option>TigerData</option>
             <option>Academic</option>
           </select>
         </label>
@@ -469,11 +472,13 @@
         <p>
           本报告基于腾讯云 PostgreSQL 自动向量化文档，结合 AWS Aurora、阿里云 PolarDB、Google AlloyDB、
           MongoDB Atlas、Elasticsearch、Snowflake、Databricks、百度 VectorDB、ByteHouse、Oracle、Microsoft 等厂商资料，
-          以及 ACORN、VBase、FreshDiskANN、Matryoshka Representation Learning 等学术/系统论文，分析 Auto Embedding 的技术实现、落地路径与下一步演进方向。
+          以及 pgai Vectorizer、pgvector 0.8、PostgreSQL 18、ACORN、VBase、FreshDiskANN、Matryoshka Representation Learning 等社区与学术资料，
+          分析 Auto Embedding 的技术实现、落地路径与一套可在社区 PostgreSQL 18 上实现的方案设计。
         </p>
         <div class="tagline">
           <span class="tag">可按大纲跳转</span>
           <span class="tag">厂商/类型/自动化环节筛选</span>
+          <span class="tag">含 PG18 方案设计</span>
           <span class="tag">含工程风险与选型建议</span>
           <span class="tag">含学术前沿</span>
         </div>
@@ -484,11 +489,11 @@
         <div class="grid cols-3">
           <div class="card">
             <span class="key-number">核心变化</span>
-            <p>Auto Embedding 把“数据写入后由应用/ETL 调模型再写回”转变为数据库或搜索服务托管的生命周期能力：变更捕获、批处理、回填、重试、向量存储、索引维护、查询侧向量化。</p>
+            <p>Auto Embedding 把“数据写入后由应用/ETL 调模型再写回”转变为数据库或搜索服务托管的派生数据生命周期：变更捕获、分块、批处理、回填、重试、向量存储、索引维护、查询侧向量化和模型版本治理。</p>
           </div>
           <div class="card">
             <span class="key-number">主流路线</span>
-            <p>产业界分为三类：PostgreSQL 内核/扩展内自动化、搜索/文档/数仓服务内托管 Embedding、以及触发器 + 队列 + 外部推理服务的组合式方案。</p>
+            <p>产业界分为四类：数据库扩展内任务系统、字段/索引级托管 Embedding、CDC/湖仓同步向量索引、以及触发器 + 队列 + 外部推理服务的可组合方案。</p>
           </div>
           <div class="card">
             <span class="key-number">竞争焦点</span>
@@ -500,9 +505,10 @@
         <ul>
           <li><strong>腾讯云方案工程化程度较高：</strong>它不是单纯暴露 <code>get_embedding()</code>，而是引入增量任务、存量任务、pgmq 队列、bgworker、状态视图、错误表、指数退避和 DDL 保护，已经具备数据库内“嵌入任务系统”的雏形。</li>
           <li><strong>Google AlloyDB、MongoDB、Elastic、Snowflake 更接近产品化 Auto Embedding：</strong>它们把源字段、模型、索引或查询侧向量化封装为声明式字段/服务；用户更少感知队列与触发器。</li>
+          <li><strong>pgai Vectorizer 是社区 PostgreSQL 的重要参照：</strong>它用 <code>ai.create_vectorizer</code> 声明 loading、chunking、formatting、embedding、destination，内部通过触发器、队列表和外部 worker 保持向量同步，证明社区 PG 不必等待内核原生支持也能实现 Auto Embedding。</li>
           <li><strong>Aurora/Supabase 代表可组合模式：</strong>用 PostgreSQL 触发器、pgmq/pg_cron、Lambda/Edge Function、Bedrock/OpenAI 组合实现，灵活但需要自管可靠性。</li>
           <li><strong>学术热点已从“纯向量 ANN”转向“生产级混合查询”：</strong>ACORN/RACORN、VBase、FreshDiskANN、MRL 等研究分别解决过滤谓词、关系算子融合、实时更新和多维度自适应检索问题。</li>
-          <li><strong>落地建议：</strong>企业应把 Auto Embedding 视为数据资产治理能力：必须设计 embedding_version、source_hash、模型切换回填、队列积压告警、PII/密钥隔离和离线评测闭环。</li>
+          <li><strong>社区 PG18 推荐方案：</strong>采用“声明式 vectorizer 元数据 + 触发器轻量入队 + pgmq/队列表 + 外部 worker 池 + pgvector 0.8 HNSW/IVFFlat + 查询侧 embed API + 蓝绿模型重嵌入”的架构，优先保证写入路径安全、最终一致和可观测。</li>
         </ul>
       </section>
 
@@ -625,8 +631,141 @@
         </p>
       </section>
 
+      <section id="mechanisms">
+        <h2>4. 技术机制分层拆解</h2>
+        <p>
+          深入看 Auto Embedding，所有产品都在解决同一个派生数据维护问题：源数据是事实表，embedding 是可重算但昂贵的派生列/派生索引。
+          因此，评价一个方案不能只看“是否自动调用模型”，而要看它如何捕获变化、如何调度失败重试、如何避免过期写回、如何在过滤检索下保持召回，以及如何处理模型版本升级。
+        </p>
+
+        <h3>4.1 六层实现模型</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>层次</th>
+                <th>关键问题</th>
+                <th>常见实现</th>
+                <th>代表方案</th>
+                <th>工程判断</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>声明层</td>
+                <td>用户如何描述“哪些数据要向量化、用什么模型、存到哪里”。</td>
+                <td>SQL 函数、字段类型、索引定义、服务定义、SDK pipeline。</td>
+                <td>Tencent <code>add_*_autoembedding_task</code>、pgai <code>create_vectorizer</code>、Elastic <code>semantic_text</code>、MongoDB <code>autoEmbed</code>。</td>
+                <td>声明越接近 DDL，越容易纳入迁移、审计和权限；SDK pipeline 灵活但治理弱。</td>
+              </tr>
+              <tr>
+                <td>变更捕获层</td>
+                <td>如何知道源字段新增、更新、删除、字段组合或视图结果变化。</td>
+                <td>行级触发器、索引刷新、CDC/Change Data Feed、对象存储事件、手动刷新。</td>
+                <td>Tencent/pgai/Supabase 用触发器；Databricks 用 Delta Sync/CDF；Snowflake 用服务刷新；MongoDB/Elastic 嵌入索引写入链路。</td>
+                <td>触发器延迟最低但会给 OLTP 写路径加开销；CDC 更适合批流和湖仓，但新鲜度取决于管道。</td>
+              </tr>
+              <tr>
+                <td>调度层</td>
+                <td>如何把昂贵、易失败的模型调用从事务中解耦出来。</td>
+                <td>pgmq/队列表、SQS、内部任务表、外部 worker、云函数、pg_cron。</td>
+                <td>Tencent pgmq + bgworker；pgai 队列表 + worker；Aurora SQS/Lambda；Supabase pgmq + Edge Function。</td>
+                <td>高质量方案必须有 visibility timeout、指数退避、死信/错误表、批处理、幂等键和限流。</td>
+              </tr>
+              <tr>
+                <td>推理层</td>
+                <td>模型在哪里执行，如何控制 token、批量、密钥、网络失败和模型兼容。</td>
+                <td>数据库内 ONNX、SQL UDF 调外部服务、外部 worker 调 API、托管 inference endpoint。</td>
+                <td>Oracle ONNX、AlloyDB google_ml、Tencent hunyuan、MongoDB Voyage AI、Elastic inference endpoint。</td>
+                <td>数据库内推理利于合规但资源隔离难；外部 worker 更安全弹性，但要处理网络和凭证。</td>
+              </tr>
+              <tr>
+                <td>存储/索引层</td>
+                <td>向量是一对一列，还是一对多 chunk 表；索引如何应对过滤和动态更新。</td>
+                <td>源表 vector 列、独立 embedding 表、内部系统集合、HNSW/IVFFlat/ScaNN/DiskANN。</td>
+                <td>Tencent 目标列；pgai destination_table/column；MongoDB 内部生成集合；AlloyDB ScaNN Auto；Microsoft DiskANN。</td>
+                <td>长文档 RAG 应优先一对多 chunk 表；短字段检索可用源表列。过滤重的场景必须测 pgvector 0.8 iterative scan 或专用 filtered ANN。</td>
+              </tr>
+              <tr>
+                <td>查询/治理层</td>
+                <td>查询文本是否自动向量化，模型版本是否一致，如何监控质量和成本。</td>
+                <td>查询侧 embedding endpoint、同模型约束、状态视图、错误表、token 账单、召回评测。</td>
+                <td>MongoDB/Elastic/Snowflake 查询侧托管；Tencent 状态/错误表；Databricks Unity Catalog 治理。</td>
+                <td>生产系统必须把 embedding 当作带版本的数据资产，而不是无主的 float 数组。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>4.2 关键技术取舍</h3>
+        <div class="grid cols-2">
+          <div class="card">
+            <h3>触发器 vs CDC</h3>
+            <p><strong>触发器</strong>适合源表和向量列同库、需要秒级新鲜度的 OLTP 场景。它的正确做法是只写轻量任务，不在事务里调用模型。<strong>CDC</strong>适合湖仓、跨库或大规模同步，优点是对业务写路径侵入小，缺点是链路更长、错误定位更复杂。</p>
+          </div>
+          <div class="card">
+            <h3>源表向量列 vs 独立 chunk 表</h3>
+            <p>商品标题、短描述等一行一向量适合源表列；知识库/RAG 文档通常需要一行多 chunk，独立表可记录 chunk 序号、offset、source_hash、ACL、模型版本，避免把文档分块塞回业务主表。</p>
+          </div>
+          <div class="card">
+            <h3>外部 worker vs 数据库 bgworker</h3>
+            <p>bgworker 生命周期由 postmaster 管理，便于封装成扩展，但 C 语言实现、HTTP/凭证处理和崩溃隔离更难。外部 worker（pgai/Supabase/Aurora Lambda）更容易横向扩容和隔离模型依赖，但需要部署与运维。</p>
+          </div>
+          <div class="card">
+            <h3>HNSW/IVFFlat vs DiskANN/ScaNN</h3>
+            <p>社区 pgvector 的 HNSW 是 PG 内最成熟路径，0.8 后通过 iterative scan 缓解过滤后结果不足。DiskANN/ScaNN 更适合超大规模和磁盘友好索引，但社区 PG 主线里可用性、扩展成熟度和运维复杂度需单独评估。</p>
+          </div>
+        </div>
+
+        <h3>4.3 各方案的“真实技术含量”比较</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>方案</th>
+                <th>自动化深度</th>
+                <th>最值得借鉴的机制</th>
+                <th>短板</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>TencentDB Auto Embedding</td>
+                <td>数据库扩展级：任务、触发器、队列、worker、回填、错误视图基本闭环。</td>
+                <td>消费时重新读取源行、写回前比对源内容、增量/存量任务分离、DDL 保护。</td>
+                <td>公开文档中模型版本、chunk 表、多租户 ACL 下推和查询侧自动 embedding 仍可加强。</td>
+              </tr>
+              <tr>
+                <td>pgai Vectorizer</td>
+                <td>社区扩展/worker 级：声明式 pipeline + 队列 + worker。</td>
+                <td>loading/chunking/formatting/embedding/destination 的 DSL 很适合社区 PG 复用。</td>
+                <td>自托管 worker 默认轮询间隔较长，错误重试/优先级/死信队列需进一步工程化。</td>
+              </tr>
+              <tr>
+                <td>AlloyDB AI</td>
+                <td>云数据库字段级：初始化后自动回填和 transactional refresh。</td>
+                <td>把回填、增量刷新和 auto vector index 合并成少量 SQL，用户心智低。</td>
+                <td>依赖 Google 托管模型与 ScaNN 能力，社区 PG 无法直接复刻。</td>
+              </tr>
+              <tr>
+                <td>MongoDB / Elastic</td>
+                <td>索引/字段级：写入和查询两侧都可自动向量化。</td>
+                <td>查询 API 可直接传自然语言文本，自动使用兼容模型生成 query embedding。</td>
+                <td>模型空间、成本和内部存储由平台掌控，细粒度事务语义弱于关系库。</td>
+              </tr>
+              <tr>
+                <td>Aurora / Supabase 组合式</td>
+                <td>参考架构级：能力强但拼装程度高。</td>
+                <td>证明 Postgres 原生触发器、pgmq/pg_cron、外部函数足以搭出生产链路。</td>
+                <td>可靠性、幂等、重试、观测和模型升级都落到用户工程。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section id="industry">
-        <h2>4. 产业落地与主流厂商矩阵</h2>
+        <h2>5. 产业落地与主流厂商矩阵</h2>
         <p class="muted">下表和卡片可通过左侧字段筛选。成熟度依据公开资料中的 GA/Preview/官方实践/研究性质归类。</p>
 
         <div class="table-wrap">
@@ -760,11 +899,20 @@
                 <td><span class="score mid">Pattern</span></td>
                 <td>适合开发者自定义；生产可靠性与成本需自管。</td>
               </tr>
+              <tr class="vendor-row" data-vendor="TigerData" data-category="PostgreSQL" data-automation="trigger queue backfill auto-index index-time" data-maturity="GA" data-text="TigerData Timescale pgai Vectorizer create_vectorizer queue worker chunking destination table pgvector StreamingDiskANN">
+                <td>TigerData</td>
+                <td>pgai Vectorizer</td>
+                <td><code>ai.create_vectorizer</code> 声明 loading、chunking、formatting、embedding、destination，worker 自动生成并同步向量。</td>
+                <td>SQL 元数据 + 触发器/队列表 + 外部 vectorizer worker；云上可由调度任务触发。</td>
+                <td>pgvector；资料中也提到大表后可自动建向量索引/StreamingDiskANN 路线。</td>
+                <td><span class="score high">GA/社区</span></td>
+                <td>社区 PG 最接近产品化 Auto Embedding 的参照；自托管需补强 worker 运维、重试和优先级。</td>
+              </tr>
             </tbody>
           </table>
         </div>
 
-        <h3>4.1 重点厂商解读</h3>
+        <h3>5.1 重点厂商解读</h3>
         <div class="grid cols-2" id="vendor-cards">
           <article class="card vendor-card" data-vendor="Google" data-category="PostgreSQL" data-automation="trigger backfill auto-index in-database-inference" data-maturity="Preview" data-text="AlloyDB ai.initialize_embeddings transactional auto vector index">
             <h3>Google AlloyDB AI：声明式自动向量列 + 自动索引</h3>
@@ -801,11 +949,17 @@
             <p>腾讯方案直接在数据库内封装任务、触发器、pgmq、bgworker 与错误表，用户只需注册任务；这比外部 ETL 更接近数据库原生，同时保留 SQL 可观测和 pgvector 生态。</p>
             <p><strong>启示：</strong>适合已经在 TencentDB for PostgreSQL 上构建 RAG/语义检索的业务。</p>
           </article>
+
+          <article class="card vendor-card" data-vendor="TigerData" data-category="PostgreSQL" data-automation="trigger queue backfill auto-index" data-maturity="GA" data-text="pgai Vectorizer create_vectorizer loading chunking formatting embedding destination worker">
+            <h3>pgai Vectorizer：社区 PG 的声明式向量化 pipeline</h3>
+            <p>pgai 的价值不只是自动调用 OpenAI/Ollama，而是把加载、分块、格式化、嵌入模型和目标表/列抽象为 SQL 配置；worker 轮询队列并批量处理，向量作为最终一致的派生数据维护。</p>
+            <p><strong>启示：</strong>社区 PG18 方案应复用这种 DSL，但需要补齐指数退避、死信、优先级、模型蓝绿切换和 query-time embedding。</p>
+          </article>
         </div>
       </section>
 
       <section id="patterns">
-        <h2>5. 架构模式对比</h2>
+        <h2>6. 架构模式对比</h2>
         <div class="table-wrap">
           <table>
             <thead>
@@ -857,14 +1011,14 @@
           </table>
         </div>
 
-        <h3>5.1 一致性语义</h3>
+        <h3>6.1 一致性语义</h3>
         <ul>
           <li><strong>强一致：</strong>同步事务内生成向量；代价是写入延迟、失败传播和模型服务耦合。</li>
           <li><strong>读己之写但向量延迟：</strong>主数据可立即读到，向量字段异步补齐；大多数 Auto Embedding 产品采用此模式。</li>
           <li><strong>近实时索引：</strong>Snowflake/Databricks/PolarSearch 这类服务通常按刷新或同步管道维护索引，适合搜索和分析，不适合严格事务语义。</li>
         </ul>
 
-        <h3>5.2 生产系统必须补齐的元数据</h3>
+        <h3>6.2 生产系统必须补齐的元数据</h3>
         <pre><code>recommended columns:
   source_hash          -- 源字段归一化后的 hash，用于判断过期写回
   embedding_model      -- 模型名称，如 hunyuan-embedding / gemini-embedding-001
@@ -878,7 +1032,7 @@
       </section>
 
       <section id="academic">
-        <h2>6. 学术层面的最新方案与趋势</h2>
+        <h2>7. 学术层面的最新方案与趋势</h2>
         <p>
           学术界并不常把问题命名为 Auto Embedding，但其关键技术分散在向量数据库、混合检索、动态 ANN、表示学习、数据库查询优化和 RAG 系统中。
           与产业落地最相关的方向如下。
@@ -928,7 +1082,7 @@
           </article>
         </div>
 
-        <h3>6.1 对 Auto Embedding 产品的影响</h3>
+        <h3>7.1 对 Auto Embedding 产品的影响</h3>
         <ul>
           <li><strong>从“生成向量”升级为“生成可治理的检索资产”：</strong>模型版本、分块版本、维度版本和评测集会成为数据库元数据。</li>
           <li><strong>过滤检索会成为核心卖点：</strong>企业 RAG 几乎总带 tenant、ACL、时间、品类、地域过滤；ACORN/VBase 类研究会进入主流数据库优化器。</li>
@@ -938,8 +1092,313 @@
         </ul>
       </section>
 
+      <section id="pg18-design">
+        <h2>8. 基于社区 PostgreSQL 18 的 Auto Embedding 方案设计</h2>
+        <p>
+          目标是在不依赖云厂商闭源能力的前提下，基于社区 PostgreSQL 18、pgvector 0.8+、pgmq（或等价队列表）、外部 worker 和可选 pgai 能力，设计一个可落地的 Auto Embedding 系统。
+          该方案刻意不把模型 HTTP 调用放进业务事务，也不要求修改 PostgreSQL 内核；它把 embedding 看成类似全文索引/物化视图的派生资产，通过元数据、队列和 worker 保持最终一致。
+        </p>
+
+        <h3>8.1 设计目标与非目标</h3>
+        <div class="grid cols-2">
+          <div class="card">
+            <h3>目标</h3>
+            <ul>
+              <li>一条 SQL 声明源表、源字段、分块、模型、目标表/列和索引策略。</li>
+              <li>自动处理历史回填、增量 INSERT/UPDATE/DELETE、失败重试和可观测状态。</li>
+              <li>支持短字段一对一向量列和长文档一对多 chunk 表两种目的地。</li>
+              <li>支持查询侧文本自动向量化，并强制使用与索引兼容的模型版本。</li>
+              <li>支持模型升级的蓝绿重嵌入，不破坏线上检索。</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>非目标</h3>
+            <ul>
+              <li>不追求在源事务内强一致生成向量；默认采用最终一致。</li>
+              <li>不把复杂模型依赖、HTTP 客户端和密钥处理放入数据库后端进程。</li>
+              <li>不替代专业向量数据库在百亿级、复杂 filtered ANN 上的所有能力。</li>
+              <li>不把 chunking、rerank、评测逻辑硬编码在业务表触发器里。</li>
+            </ul>
+          </div>
+        </div>
+
+        <h3>8.2 PG18 能力如何被利用</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>PG18 / 社区组件</th>
+                <th>在方案中的作用</th>
+                <th>设计细节</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>PostgreSQL 18 AIO</td>
+                <td>提升大表回填扫描、VACUUM 和 bitmap/seq scan 的 I/O 效率。</td>
+                <td>回填 worker 按主键范围扫描历史数据；PG18 的异步 I/O 对顺序扫描和 vacuum 更友好，可降低大规模 backfill 对存储的阻塞。</td>
+              </tr>
+              <tr>
+                <td>UUIDv7</td>
+                <td>作为任务、chunk、embedding 版本的时间有序 ID。</td>
+                <td>比 UUIDv4 更利于 B-tree locality；任务表和错误表使用 <code>uuidv7()</code> 便于按时间排查。</td>
+              </tr>
+              <tr>
+                <td>Skip scan / B-tree</td>
+                <td>提高多租户 metadata filter 的普通索引利用率。</td>
+                <td>为 <code>(tenant_id, acl_hash, updated_at)</code>、<code>(vectorizer_id, status, next_run_at)</code> 等建立复合索引；PG18 skip scan 增加部分条件下的可用性。</td>
+              </tr>
+              <tr>
+                <td>Generated columns</td>
+                <td>生成规范化文本、source_hash 或过滤字段。</td>
+                <td>hash/status 等用于写回一致性的字段建议 <code>STORED</code>；纯展示或轻量拼接可用默认 virtual generated column。</td>
+              </tr>
+              <tr>
+                <td>pgvector 0.8+</td>
+                <td>存储与检索向量，支持 HNSW/IVFFlat、halfvec、sparsevec、iterative scan。</td>
+                <td>过滤检索默认启用 <code>hnsw.iterative_scan='relaxed_order'</code>，并结合 B-tree 过滤索引；大维度可评估 <code>halfvec</code>。</td>
+              </tr>
+              <tr>
+                <td>pgmq / 队列表</td>
+                <td>承载任务消息、visibility timeout、重试和归档。</td>
+                <td>若不用 pgmq，可用普通表 + <code>FOR UPDATE SKIP LOCKED</code> 实现；pgmq 提供更接近 SQS 的 read/delete/archive 语义。</td>
+              </tr>
+              <tr>
+                <td>LISTEN/NOTIFY</td>
+                <td>降低 worker 纯轮询延迟。</td>
+                <td>触发器入队后发 NOTIFY，worker 被唤醒；NOTIFY 只做提示，可靠性仍由队列表保证。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>8.3 总体架构</h3>
+        <pre><code>业务写入
+  -> AFTER INSERT/UPDATE/DELETE 触发器只写轻量 job(row_pk, source_hash, op, vectorizer_id)
+  -> pgmq / ae_job_queue 持久化任务，并 NOTIFY worker
+  -> worker 池按 vectorizer_id + 优先级读取任务，批量回源表读取最新内容
+  -> chunking / formatting / provider batching / rate limiting
+  -> 调 embedding provider 或私有模型服务
+  -> 在同一事务中校验 source_hash，upsert embedding 表或源表 vector 列
+  -> 标记 job done；失败则按指数退避设置 next_run_at，超过阈值进 dead-letter
+  -> 查询 API 使用同一 model_version 生成 query embedding，走 pgvector + metadata filter + optional rerank</code></pre>
+
+        <h3>8.4 元数据表设计</h3>
+        <pre><code>CREATE SCHEMA IF NOT EXISTS autoembed;
+
+CREATE TABLE autoembed.vectorizer (
+  vectorizer_id uuid PRIMARY KEY DEFAULT uuidv7(),
+  name text UNIQUE NOT NULL,
+  source_table regclass NOT NULL,
+  primary_key_columns name[] NOT NULL,
+  source_columns name[] NOT NULL,
+  destination_kind text NOT NULL CHECK (destination_kind IN ('column', 'table')),
+  destination_table regclass,
+  destination_column name,
+  chunking_config jsonb NOT NULL DEFAULT '{"type":"none"}',
+  formatting_config jsonb NOT NULL DEFAULT '{}',
+  embedding_provider text NOT NULL,
+  embedding_model text NOT NULL,
+  embedding_model_version text NOT NULL,
+  embedding_dim int NOT NULL,
+  distance_metric text NOT NULL DEFAULT 'cosine',
+  index_method text NOT NULL DEFAULT 'hnsw',
+  status text NOT NULL DEFAULT 'enabled',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE autoembed.embedding_job (
+  job_id uuid PRIMARY KEY DEFAULT uuidv7(),
+  vectorizer_id uuid NOT NULL REFERENCES autoembed.vectorizer(vectorizer_id),
+  source_pk jsonb NOT NULL,
+  op text NOT NULL CHECK (op IN ('insert', 'update', 'delete', 'backfill')),
+  source_hash text,
+  priority int NOT NULL DEFAULT 100,
+  attempts int NOT NULL DEFAULT 0,
+  next_run_at timestamptz NOT NULL DEFAULT now(),
+  locked_at timestamptz,
+  locked_by text,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (vectorizer_id, source_pk)
+);
+
+CREATE TABLE autoembed.embedding_error (
+  error_id uuid PRIMARY KEY DEFAULT uuidv7(),
+  vectorizer_id uuid NOT NULL,
+  source_pk jsonb,
+  job_id uuid,
+  error_code text,
+  error_message text,
+  detail jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);</code></pre>
+
+        <h4>目的地表（长文档/RAG 推荐）</h4>
+        <pre><code>CREATE TABLE kb_article_embedding (
+  embedding_id uuid PRIMARY KEY DEFAULT uuidv7(),
+  vectorizer_id uuid NOT NULL,
+  source_pk jsonb NOT NULL,
+  chunk_no int NOT NULL,
+  chunk_text text NOT NULL,
+  source_hash text NOT NULL,
+  embedding_model_version text NOT NULL,
+  embedding halfvec(1536),          -- 或 vector(1536)，按质量/存储权衡
+  tenant_id bigint,
+  acl_hash text,
+  metadata jsonb NOT NULL DEFAULT '{}',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (vectorizer_id, source_pk, chunk_no, embedding_model_version)
+);
+
+CREATE INDEX ON kb_article_embedding (tenant_id, acl_hash);
+CREATE INDEX ON kb_article_embedding
+  USING hnsw (embedding halfvec_cosine_ops)
+  WITH (m = 16, ef_construction = 128);</code></pre>
+
+        <h3>8.5 SQL API 设计</h3>
+        <p>借鉴 pgai 的 DSL，但加入版本治理、回填策略和查询侧模型约束：</p>
+        <pre><code>SELECT autoembed.create_vectorizer(
+  name               => 'kb_article_v1',
+  source_table       => 'public.kb_article'::regclass,
+  primary_key        => ARRAY['id'],
+  source_columns     => ARRAY['title', 'content'],
+  destination        => autoembed.destination_table('public.kb_article_embedding'),
+  chunking           => autoembed.chunking_recursive(chunk_size => 800, overlap => 120),
+  formatting         => autoembed.format_template('title: ${title}\n${chunk}'),
+  embedding          => autoembed.embedding_http(
+                         provider => 'openai-compatible',
+                         endpoint_secret => 'embedding_endpoint',
+                         model => 'bge-m3',
+                         version => '2026-07-01',
+                         dimensions => 1024),
+  indexing           => autoembed.indexing_hnsw(metric => 'cosine', m => 16, ef_construction => 128),
+  backfill           => autoembed.backfill(start_now => true, batch_rows => 1000),
+  query_embedding    => true
+);</code></pre>
+
+        <div class="note">
+          <strong>为什么不直接复用源表 generated column 调模型？</strong>
+          PG18 virtual generated column 是读时计算，不适合触发外部模型调用；stored generated column 是写时计算，会把模型延迟放进事务。正确做法是 generated column 只生成轻量、确定性的 <code>source_hash</code> 或文本规范化结果，模型调用交给异步 worker。
+        </div>
+
+        <h3>8.6 worker 处理语义</h3>
+        <ol>
+          <li><strong>取任务：</strong>按 <code>next_run_at</code>、priority、vectorizer_id 拉取，使用 pgmq visibility timeout 或 <code>FOR UPDATE SKIP LOCKED</code>，避免多 worker 重复处理。</li>
+          <li><strong>回源读取：</strong>队列只存主键和 source_hash，worker 处理前重新读取当前源行，防止旧消息携带旧文本。</li>
+          <li><strong>去重合并：</strong>同一行多次 update 合并为一条最新任务；delete 任务优先删除对应 embedding。</li>
+          <li><strong>分块和格式化：</strong>chunking 应确定性，chunk_no 和 source_hash 共同决定幂等写入。</li>
+          <li><strong>批量推理：</strong>按 provider 限制合并 batch，记录 token、latency、provider request id。</li>
+          <li><strong>写回校验：</strong>写回前再次比较当前 source_hash；若变化，放弃本次结果并重新入队。</li>
+          <li><strong>失败处理：</strong>区分可重试错误（429/5xx/timeout）和不可重试错误（维度不匹配、文本过长、权限错误），使用指数退避和 dead-letter。</li>
+        </ol>
+
+        <pre><code>-- 伪代码：worker 领取任务
+WITH picked AS (
+  SELECT job_id
+  FROM autoembed.embedding_job
+  WHERE next_run_at <= now()
+  ORDER BY priority, created_at
+  LIMIT 100
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE autoembed.embedding_job j
+SET locked_at = now(), locked_by = $worker_id
+FROM picked
+WHERE j.job_id = picked.job_id
+RETURNING j.*;</code></pre>
+
+        <h3>8.7 查询 API 与过滤检索策略</h3>
+        <pre><code>CREATE OR REPLACE FUNCTION autoembed.search(
+  vectorizer_name text,
+  query_text text,
+  tenant bigint,
+  acl text,
+  k int DEFAULT 10
+) RETURNS TABLE(source_pk jsonb, chunk_text text, score float8)
+LANGUAGE sql
+AS $$
+  -- 实际实现中 query embedding 可由 SECURITY DEFINER 函数调用 worker-side cache/provider
+  WITH q AS (
+    SELECT autoembed.embed_query(vectorizer_name, query_text) AS v
+  )
+  SELECT e.source_pk,
+         e.chunk_text,
+         1 - (e.embedding <=> (SELECT v FROM q)) AS score
+  FROM kb_article_embedding e
+  WHERE e.tenant_id = tenant
+    AND e.acl_hash = acl
+    AND e.embedding_model_version = autoembed.active_model_version(vectorizer_name)
+  ORDER BY e.embedding <=> (SELECT v FROM q)
+  LIMIT k;
+$$;</code></pre>
+
+        <p>
+          对 pgvector 0.8+，过滤查询建议在会话或函数内设置：
+          <code>SET LOCAL hnsw.iterative_scan = 'relaxed_order'</code>，
+          并结合 <code>hnsw.max_scan_tuples</code>、<code>hnsw.ef_search</code> 做离线 recall/latency sweep。
+          如果过滤条件极端选择性（例如 tenant + ACL 后只剩万分之一数据），单纯 HNSW 后过滤仍可能不稳定，此时应考虑分区、分租户索引、预过滤候选集 rerank，或接入 ACORN/DiskANN 类系统。
+        </p>
+
+        <h3>8.8 模型升级与蓝绿重嵌入</h3>
+        <div class="flow">
+          <div><strong>注册新版本</strong><br><span class="muted">vectorizer v2，模型/维度/格式配置冻结</span></div>
+          <div><strong>新目的地</strong><br><span class="muted">新列或新 embedding table，避免覆盖 v1</span></div>
+          <div><strong>后台回填</strong><br><span class="muted">低优先级批量任务，不影响 v1 查询</span></div>
+          <div><strong>双读评测</strong><br><span class="muted">离线集 + 线上 shadow query</span></div>
+          <div><strong>原子切换</strong><br><span class="muted">active_model_version 指针切换</span></div>
+          <div><strong>延迟清理</strong><br><span class="muted">保留回滚窗口后删除旧索引</span></div>
+        </div>
+
+        <h3>8.9 安全与运维</h3>
+        <ul>
+          <li><strong>密钥：</strong>数据库只保存 secret 引用，worker 从 Vault/KMS 取真实密钥；避免把 provider key 存在普通表。</li>
+          <li><strong>权限：</strong>DDL/API 用 <code>SECURITY DEFINER</code> 收敛权限；用户只能操作自己拥有的 source table。</li>
+          <li><strong>PII：</strong>在 formatting 阶段支持脱敏函数；记录哪些字段被发送到外部模型。</li>
+          <li><strong>观测：</strong>提供 <code>autoembed.vectorizer_status</code> 视图：pending、running、failed、dead_letter、oldest_job_age、tokens/min、avg_latency、last_error。</li>
+          <li><strong>容量：</strong>回填与增量分队列/优先级，增量队列优先；回填 batch 根据 provider QPS 和数据库 I/O 自动限流。</li>
+          <li><strong>清理：</strong>DELETE 源行触发删除 embedding；模型版本下线后清理旧 embedding 和旧 HNSW 索引。</li>
+        </ul>
+
+        <h3>8.10 MVP 到生产路线</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>阶段</th>
+                <th>范围</th>
+                <th>验收标准</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>MVP</td>
+                <td>单表、单文本列、destination_column、外部 worker、HNSW。</td>
+                <td>INSERT/UPDATE 后秒级生成向量；失败可重试；状态视图可查。</td>
+              </tr>
+              <tr>
+                <td>RAG 版</td>
+                <td>destination_table、chunking、formatting、query embedding、metadata filter。</td>
+                <td>支持文档一对多 chunk；搜索 API 可直接传文本；评测集 recall/nDCG 达标。</td>
+              </tr>
+              <tr>
+                <td>生产版</td>
+                <td>pgmq/死信、指数退避、限流、蓝绿模型切换、多租户 ACL、观测告警。</td>
+                <td>provider 故障不影响业务写入；恢复后自动追平；可无停机切换模型版本。</td>
+              </tr>
+              <tr>
+                <td>规模版</td>
+                <td>分区/分租户索引、halfvec/量化、iterative scan 调参、混合检索 + rerank。</td>
+                <td>真实过滤条件下 P95/P99、recall@k、成本/千 query 均满足 SLA。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section id="evaluation">
-        <h2>7. 工程评估框架</h2>
+        <h2>9. 工程评估框架</h2>
         <div class="grid cols-2">
           <div class="card">
             <h3>功能维度</h3>
@@ -985,8 +1444,8 @@
       </section>
 
       <section id="recommendations">
-        <h2>8. 选型建议</h2>
-        <h3>8.1 按业务场景选择</h3>
+        <h2>10. 选型建议</h2>
+        <h3>10.1 按业务场景选择</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1032,7 +1491,7 @@
           </table>
         </div>
 
-        <h3>8.2 对腾讯云 Auto Embedding 的改进建议</h3>
+        <h3>10.2 对腾讯云 Auto Embedding 的改进建议</h3>
         <ol>
           <li><strong>显式加入模型版本与 source_hash：</strong>文档可建议目标表增加 <code>embedding_model_version</code>、<code>source_hash</code>，便于过期向量检测和重嵌入。</li>
           <li><strong>提供查询侧向量化封装：</strong>类似 MongoDB/Elastic，支持在检索函数中直接传文本 query，并自动使用任务同款模型生成 query embedding。</li>
@@ -1045,13 +1504,60 @@
         <div class="danger">
           <strong>不建议盲目使用 Auto Embedding 的情况：</strong>源表写入极高且对事务延迟极敏感；数据包含不可出域敏感内容但模型服务在外网；embedding 模型频繁切换但没有版本治理；检索强依赖 ACL 过滤但向量索引不支持过滤下推。
         </div>
+
+        <h3>10.3 如果基于社区 PG18 自研，建议采用的默认技术栈</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>组件</th>
+                <th>默认选择</th>
+                <th>原因</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>向量类型与索引</td>
+                <td>pgvector 0.8+，HNSW；大维度评估 halfvec。</td>
+                <td>社区成熟度最高，PG 内 SQL 查询体验最好；iterative scan 改善过滤后结果不足。</td>
+              </tr>
+              <tr>
+                <td>任务队列</td>
+                <td>pgmq 或普通队列表 + <code>FOR UPDATE SKIP LOCKED</code>。</td>
+                <td>避免引入外部 MQ；visibility timeout 和归档语义适合 embedding job。</td>
+              </tr>
+              <tr>
+                <td>执行器</td>
+                <td>外部 worker 池优先，后续再考虑 C bgworker。</td>
+                <td>更易处理 HTTP、并发、provider SDK、密钥、GPU/CPU 隔离和滚动升级。</td>
+              </tr>
+              <tr>
+                <td>声明式 API</td>
+                <td>参考 pgai 的 loading/chunking/formatting/embedding/destination DSL。</td>
+                <td>可迁移、可审计、可复用，比把逻辑写散在业务触发器里更稳。</td>
+              </tr>
+              <tr>
+                <td>检索质量</td>
+                <td>dense vector + BM25/全文检索 + RRF + rerank。</td>
+                <td>多数企业知识库单靠 dense embedding 不够稳定，混合检索是更稳的默认路径。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section id="sources">
-        <h2>9. 参考资料</h2>
+        <h2>11. 参考资料</h2>
         <ol class="source-list">
           <li><a href="https://cloud.tencent.com/document/product/409/133912" target="_blank" rel="noreferrer">腾讯云：云数据库 PostgreSQL 自动向量化</a></li>
           <li><a href="https://cloud.tencent.com/document/product/409/67017" target="_blank" rel="noreferrer">腾讯云：云数据库 PostgreSQL 内核版本更新动态</a></li>
+          <li><a href="https://www.postgresql.org/docs/18/release-18.html" target="_blank" rel="noreferrer">PostgreSQL 18 Release Notes</a></li>
+          <li><a href="https://www.postgresql.org/about/news/postgresql-18-released-3142/" target="_blank" rel="noreferrer">PostgreSQL 18 Released</a></li>
+          <li><a href="https://pgxn.org/dist/vector/0.8.0/" target="_blank" rel="noreferrer">pgvector 0.8：README / PGXN</a></li>
+          <li><a href="https://www.postgresql.org/about/news/pgvector-080-released-2952/" target="_blank" rel="noreferrer">PostgreSQL News：pgvector 0.8.0 Released</a></li>
+          <li><a href="https://github.com/timescale/pgai/blob/main/docs/vectorizer/api-reference.md" target="_blank" rel="noreferrer">pgai Vectorizer API Reference</a></li>
+          <li><a href="https://github.com/timescale/pgai/blob/main/docs/vectorizer/worker.md" target="_blank" rel="noreferrer">pgai Vectorizer Worker</a></li>
+          <li><a href="https://github.com/pgmq/pgmq/" target="_blank" rel="noreferrer">pgmq：Postgres Message Queue</a></li>
           <li><a href="https://aws.amazon.com/blogs/database/automating-vector-embedding-generation-in-amazon-aurora-postgresql-with-amazon-bedrock/" target="_blank" rel="noreferrer">AWS：Automating vector embedding generation in Amazon Aurora PostgreSQL with Amazon Bedrock</a></li>
           <li><a href="https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraPostgreSQL.VectorDB.html" target="_blank" rel="noreferrer">AWS：Using Aurora PostgreSQL as a Knowledge Base for Amazon Bedrock</a></li>
           <li><a href="https://www.alibabacloud.com/help/en/polardb/polardb-for-postgresql/getting-started-pgvector" target="_blank" rel="noreferrer">Alibaba Cloud：Enable pgvector for AI Embedding Searches on PolarDB PostgreSQL</a></li>
