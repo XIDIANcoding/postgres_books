@@ -67,12 +67,22 @@
     }
 
     .toc {
-      display: grid;
-      gap: 6px;
       margin: 18px 0 24px;
     }
 
-    .toc a {
+    .toc-list,
+    .toc-children {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .toc-list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .toc-list > li > a {
       display: block;
       padding: 8px 10px;
       color: #dbeafe;
@@ -80,28 +90,36 @@
       font-size: 14px;
     }
 
-    .toc a:hover {
+    .toc-list > li > a:hover {
       background: rgba(59, 130, 246, 0.22);
       text-decoration: none;
     }
 
-    .toc-group {
-      display: grid;
-      gap: 4px;
+    .toc-chapter > a {
+      font-weight: 600;
     }
 
-    .toc-sub {
+    .toc-children {
+      margin: 4px 0 2px 8px;
+      padding: 4px 0 4px 12px;
+      border-left: 2px solid rgba(147, 197, 253, 0.35);
       display: grid;
       gap: 2px;
-      margin: 0 0 2px 12px;
-      padding-left: 10px;
-      border-left: 1px solid rgba(255, 255, 255, 0.12);
     }
 
-    .toc-sub a {
-      padding: 5px 8px;
+    .toc-children a {
+      display: block;
+      padding: 4px 8px;
+      color: #93c5fd;
+      border-radius: 6px;
       font-size: 12px;
-      color: #bfdbfe;
+      line-height: 1.4;
+    }
+
+    .toc-children a:hover {
+      background: rgba(59, 130, 246, 0.18);
+      text-decoration: none;
+      color: #dbeafe;
     }
 
     .filter-panel {
@@ -406,27 +424,29 @@
       <div class="meta">面向数据库与检索系统的自动向量化能力<br>更新日期：2026-07-18</div>
 
       <nav class="toc" aria-label="报告大纲">
-        <a href="#summary">1. 执行摘要</a>
-        <a href="#definition">2. 技术定义与边界</a>
-        <a href="#tencent">3. 腾讯云实现拆解</a>
-        <div class="toc-group">
-          <a href="#mechanisms">4. 技术机制分层拆解</a>
-          <div class="toc-sub">
-            <a href="#mechanisms-layers">4.1 六层实现模型</a>
-            <a href="#mechanisms-tradeoffs">4.2 关键技术取舍</a>
-            <a href="#mechanisms-comparison">4.3 真实技术含量比较</a>
-            <a href="#patterns">4.4 架构模式对比</a>
-            <a href="#patterns-vendors">4.5 代表方案详细拆解</a>
-            <a href="#patterns-consistency">4.6 一致性语义</a>
-            <a href="#patterns-metadata">4.7 生产元数据</a>
-          </div>
-        </div>
-        <a href="#industry">5. 产业落地与厂商矩阵</a>
-        <a href="#academic">6. 学术前沿</a>
-        <a href="#pg18-design">7. 社区 PG18 方案设计</a>
-        <a href="#evaluation">8. 工程评估框架</a>
-        <a href="#recommendations">9. 选型建议</a>
-        <a href="#sources">10. 参考资料</a>
+        <ul class="toc-list">
+          <li><a href="#summary">1. 执行摘要</a></li>
+          <li><a href="#definition">2. 技术定义与边界</a></li>
+          <li><a href="#tencent">3. 腾讯云实现拆解</a></li>
+          <li class="toc-chapter">
+            <a href="#mechanisms">4. 技术机制分层拆解</a>
+            <ul class="toc-children">
+              <li><a href="#mechanisms-layers">4.1 六层实现模型</a></li>
+              <li><a href="#mechanisms-tradeoffs">4.2 关键技术取舍</a></li>
+              <li><a href="#mechanisms-comparison">4.3 真实技术含量比较</a></li>
+              <li><a href="#patterns">4.4 架构模式对比</a></li>
+              <li><a href="#patterns-vendors">4.5 代表方案详细拆解</a></li>
+              <li><a href="#patterns-consistency">4.6 一致性语义</a></li>
+              <li><a href="#patterns-metadata">4.7 生产元数据</a></li>
+            </ul>
+          </li>
+          <li><a href="#industry">5. 产业落地与厂商矩阵</a></li>
+          <li><a href="#academic">6. 学术前沿</a></li>
+          <li><a href="#pg18-design">7. 社区 PG18 方案设计</a></li>
+          <li><a href="#evaluation">8. 工程评估框架</a></li>
+          <li><a href="#recommendations">9. 选型建议</a></li>
+          <li><a href="#sources">10. 参考资料</a></li>
+        </ul>
       </nav>
 
       <div class="filter-panel">
