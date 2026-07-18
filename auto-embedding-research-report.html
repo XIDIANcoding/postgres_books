@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Auto Embedding 技术实现与产业/学术落地调研报告</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --ink: #162033;
+      --muted: #64748b;
+      --line: #dbe3ee;
+      --brand: #1d4ed8;
+      --brand-soft: #dbeafe;
+      --accent: #0f766e;
+      --accent-soft: #ccfbf1;
+      --warn: #b45309;
+      --warn-soft: #fef3c7;
+      --danger: #b91c1c;
+      --danger-soft: #fee2e2;
+      --code: #0f172a;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.65;
+    }
+
+    a { color: var(--brand); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+      padding: 24px 18px;
+      background: #0f172a;
+      color: #e5e7eb;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    aside h1 {
+      font-size: 18px;
+      line-height: 1.35;
+      margin: 0 0 12px;
+      color: #fff;
+    }
+
+    aside .meta {
+      font-size: 12px;
+      color: #a5b4fc;
+      margin-bottom: 20px;
+    }
+
+    .toc {
+      display: grid;
+      gap: 6px;
+      margin: 18px 0 24px;
+    }
+
+    .toc a {
+      display: block;
+      padding: 8px 10px;
+      color: #dbeafe;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .toc a:hover {
+      background: rgba(59, 130, 246, 0.22);
+      text-decoration: none;
+    }
+
+    .filter-panel {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+    }
+
+    .filter-panel h2 {
+      margin: 0 0 4px;
+      font-size: 14px;
+      color: #fff;
+    }
+
+    label {
+      display: grid;
+      gap: 4px;
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 8px 10px;
+      color: var(--ink);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font: inherit;
+      font-size: 13px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 9px;
+      padding: 9px 12px;
+      background: var(--brand);
+      color: #fff;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    main {
+      max-width: 1260px;
+      padding: 34px clamp(20px, 4vw, 54px) 72px;
+    }
+
+    .hero {
+      padding: 34px;
+      border-radius: 24px;
+      background:
+        radial-gradient(circle at top right, rgba(29, 78, 216, 0.18), transparent 32%),
+        linear-gradient(135deg, #fff 0%, #eef6ff 100%);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+
+    .hero h2 {
+      margin: 0 0 12px;
+      font-size: clamp(28px, 4vw, 44px);
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+    }
+
+    .hero p { max-width: 980px; color: #334155; }
+
+    .tagline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .tag, .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+
+    .tag { background: var(--brand-soft); color: #1e40af; }
+    .pill { background: #eef2ff; color: #4338ca; }
+    .pill.green { background: var(--accent-soft); color: #115e59; }
+    .pill.yellow { background: var(--warn-soft); color: #92400e; }
+    .pill.red { background: var(--danger-soft); color: #991b1b; }
+    .pill.gray { background: #f1f5f9; color: #475569; }
+
+    section {
+      margin-top: 28px;
+      padding: 28px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+    }
+
+    section h2 {
+      margin: 0 0 14px;
+      font-size: 27px;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+    }
+
+    section h3 {
+      margin: 24px 0 10px;
+      font-size: 20px;
+    }
+
+    section h4 { margin: 18px 0 8px; font-size: 16px; }
+    p { margin: 8px 0 12px; }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+    .card {
+      padding: 18px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+    }
+
+    .card h3, .card h4 { margin-top: 0; }
+    .card small { color: var(--muted); }
+    .muted { color: var(--muted); }
+
+    .key-number {
+      display: block;
+      font-size: 30px;
+      font-weight: 800;
+      line-height: 1.1;
+      color: var(--brand);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 10px;
+      margin: 18px 0;
+    }
+
+    .flow div {
+      min-height: 92px;
+      padding: 12px;
+      border-radius: 16px;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      position: relative;
+    }
+
+    .flow div:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -13px;
+      top: 35%;
+      color: var(--brand);
+      font-weight: 800;
+      z-index: 1;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 14px;
+    }
+
+    th, td {
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+      padding: 10px 9px;
+      text-align: left;
+    }
+
+    th {
+      background: #f8fafc;
+      color: #334155;
+      position: sticky;
+      top: 0;
+      z-index: 0;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+    }
+
+    .table-wrap table { margin: 0; }
+
+    pre {
+      overflow: auto;
+      padding: 16px;
+      border-radius: 16px;
+      background: var(--code);
+      color: #e2e8f0;
+      line-height: 1.55;
+      font-size: 13px;
+    }
+
+    code {
+      padding: 2px 5px;
+      border-radius: 6px;
+      background: #eef2ff;
+      color: #3730a3;
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+      color: inherit;
+    }
+
+    .note {
+      padding: 14px 16px;
+      border-left: 5px solid var(--brand);
+      background: #eff6ff;
+      border-radius: 14px;
+      color: #1e3a8a;
+    }
+
+    .warning {
+      padding: 14px 16px;
+      border-left: 5px solid var(--warn);
+      background: var(--warn-soft);
+      border-radius: 14px;
+      color: #78350f;
+    }
+
+    .danger {
+      padding: 14px 16px;
+      border-left: 5px solid var(--danger);
+      background: var(--danger-soft);
+      border-radius: 14px;
+      color: #7f1d1d;
+    }
+
+    .source-list {
+      display: grid;
+      gap: 8px;
+      padding-left: 20px;
+    }
+
+    .source-list li { padding-left: 4px; }
+
+    .vendor-card[hidden],
+    .paper-card[hidden],
+    tr[hidden] { display: none !important; }
+
+    .result-count {
+      color: #bfdbfe;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    .field-table td:first-child {
+      width: 170px;
+      color: #334155;
+      font-weight: 700;
+    }
+
+    .score {
+      display: inline-flex;
+      min-width: 58px;
+      justify-content: center;
+      padding: 3px 7px;
+      border-radius: 8px;
+      color: #fff;
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    .score.high { background: #047857; }
+    .score.mid { background: #2563eb; }
+    .score.low { background: #b45309; }
+
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { position: static; height: auto; }
+      .grid.cols-2, .grid.cols-3 { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: 1fr; }
+      .flow div::after { display: none; }
+      main { padding-top: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <h1>Auto Embedding 调研报告</h1>
+      <div class="meta">面向数据库与检索系统的自动向量化能力<br>更新日期：2026-07-18</div>
+
+      <nav class="toc" aria-label="报告大纲">
+        <a href="#summary">1. 执行摘要</a>
+        <a href="#definition">2. 技术定义与边界</a>
+        <a href="#tencent">3. 腾讯云实现拆解</a>
+        <a href="#industry">4. 产业落地与厂商矩阵</a>
+        <a href="#patterns">5. 架构模式对比</a>
+        <a href="#academic">6. 学术前沿</a>
+        <a href="#evaluation">7. 工程评估框架</a>
+        <a href="#recommendations">8. 选型建议</a>
+        <a href="#sources">9. 参考资料</a>
+      </nav>
+
+      <div class="filter-panel">
+        <h2>字段筛选</h2>
+        <label>关键词
+          <input id="q" type="search" placeholder="如 腾讯、pgmq、ACORN、回填">
+        </label>
+        <label>厂商/机构
+          <select id="vendor">
+            <option value="">全部</option>
+            <option>Tencent</option>
+            <option>AWS</option>
+            <option>Alibaba</option>
+            <option>Google</option>
+            <option>MongoDB</option>
+            <option>Elastic</option>
+            <option>Snowflake</option>
+            <option>Databricks</option>
+            <option>Baidu</option>
+            <option>ByteDance</option>
+            <option>Oracle</option>
+            <option>Microsoft</option>
+            <option>Supabase</option>
+            <option>Academic</option>
+          </select>
+        </label>
+        <label>产品类型
+          <select id="category">
+            <option value="">全部</option>
+            <option>PostgreSQL</option>
+            <option>Relational</option>
+            <option>Document</option>
+            <option>Search</option>
+            <option>Warehouse</option>
+            <option>Lakehouse</option>
+            <option>VectorDB</option>
+            <option>Research</option>
+          </select>
+        </label>
+        <label>自动化环节
+          <select id="automation">
+            <option value="">全部</option>
+            <option>trigger</option>
+            <option>queue</option>
+            <option>backfill</option>
+            <option>query-time</option>
+            <option>index-time</option>
+            <option>in-database-inference</option>
+            <option>cdc-sync</option>
+            <option>auto-index</option>
+            <option>filtered-ann</option>
+          </select>
+        </label>
+        <label>成熟度
+          <select id="maturity">
+            <option value="">全部</option>
+            <option>GA</option>
+            <option>Preview</option>
+            <option>Pattern</option>
+            <option>Research</option>
+          </select>
+        </label>
+        <button id="reset">重置筛选</button>
+        <div id="result-count" class="result-count">正在统计...</div>
+      </div>
+    </aside>
+
+    <main>
+      <header class="hero">
+        <h2>Auto Embedding：从“调用 Embedding API”走向数据库原生的向量生命周期管理</h2>
+        <p>
+          本报告基于腾讯云 PostgreSQL 自动向量化文档，结合 AWS Aurora、阿里云 PolarDB、Google AlloyDB、
+          MongoDB Atlas、Elasticsearch、Snowflake、Databricks、百度 VectorDB、ByteHouse、Oracle、Microsoft 等厂商资料，
+          以及 ACORN、VBase、FreshDiskANN、Matryoshka Representation Learning 等学术/系统论文，分析 Auto Embedding 的技术实现、落地路径与下一步演进方向。
+        </p>
+        <div class="tagline">
+          <span class="tag">可按大纲跳转</span>
+          <span class="tag">厂商/类型/自动化环节筛选</span>
+          <span class="tag">含工程风险与选型建议</span>
+          <span class="tag">含学术前沿</span>
+        </div>
+      </header>
+
+      <section id="summary">
+        <h2>1. 执行摘要</h2>
+        <div class="grid cols-3">
+          <div class="card">
+            <span class="key-number">核心变化</span>
+            <p>Auto Embedding 把“数据写入后由应用/ETL 调模型再写回”转变为数据库或搜索服务托管的生命周期能力：变更捕获、批处理、回填、重试、向量存储、索引维护、查询侧向量化。</p>
+          </div>
+          <div class="card">
+            <span class="key-number">主流路线</span>
+            <p>产业界分为三类：PostgreSQL 内核/扩展内自动化、搜索/文档/数仓服务内托管 Embedding、以及触发器 + 队列 + 外部推理服务的组合式方案。</p>
+          </div>
+          <div class="card">
+            <span class="key-number">竞争焦点</span>
+            <p>真正的差异不在“能否生成向量”，而在新旧数据一致性、回填速度、模型版本治理、筛选向量检索、混合检索、成本与延迟可控性。</p>
+          </div>
+        </div>
+
+        <h3>关键结论</h3>
+        <ul>
+          <li><strong>腾讯云方案工程化程度较高：</strong>它不是单纯暴露 <code>get_embedding()</code>，而是引入增量任务、存量任务、pgmq 队列、bgworker、状态视图、错误表、指数退避和 DDL 保护，已经具备数据库内“嵌入任务系统”的雏形。</li>
+          <li><strong>Google AlloyDB、MongoDB、Elastic、Snowflake 更接近产品化 Auto Embedding：</strong>它们把源字段、模型、索引或查询侧向量化封装为声明式字段/服务；用户更少感知队列与触发器。</li>
+          <li><strong>Aurora/Supabase 代表可组合模式：</strong>用 PostgreSQL 触发器、pgmq/pg_cron、Lambda/Edge Function、Bedrock/OpenAI 组合实现，灵活但需要自管可靠性。</li>
+          <li><strong>学术热点已从“纯向量 ANN”转向“生产级混合查询”：</strong>ACORN/RACORN、VBase、FreshDiskANN、MRL 等研究分别解决过滤谓词、关系算子融合、实时更新和多维度自适应检索问题。</li>
+          <li><strong>落地建议：</strong>企业应把 Auto Embedding 视为数据资产治理能力：必须设计 embedding_version、source_hash、模型切换回填、队列积压告警、PII/密钥隔离和离线评测闭环。</li>
+        </ul>
+      </section>
+
+      <section id="definition">
+        <h2>2. 技术定义与边界</h2>
+        <p>
+          本报告中的 Auto Embedding 指：当数据库中的文本、图片、音频、视频或复合字段发生新增、更新、删除、回填或查询请求时，系统自动完成向量生成、存储、索引与检索链路维护的能力。
+          它的边界大于“数据库内置一个 Embedding 函数”，也大于“向量数据库支持 ANN 索引”。
+        </p>
+
+        <div class="flow" aria-label="Auto Embedding 生命周期">
+          <div><strong>1. 源数据声明</strong><br><span class="muted">字段、视图、分块规则、元数据过滤字段</span></div>
+          <div><strong>2. 变更捕获</strong><br><span class="muted">触发器、CDC、Delta CDF、索引刷新、对象存储事件</span></div>
+          <div><strong>3. 任务调度</strong><br><span class="muted">队列、批处理、限流、重试、优先级</span></div>
+          <div><strong>4. 模型推理</strong><br><span class="muted">内置模型、外部 API、ONNX Runtime、GPU/CPU 池</span></div>
+          <div><strong>5. 写回与索引</strong><br><span class="muted">vector 列、内部集合、HNSW/IVF/DiskANN/ScaNN</span></div>
+          <div><strong>6. 查询闭环</strong><br><span class="muted">查询向量化、过滤、混合检索、rerank、评测</span></div>
+        </div>
+
+        <div class="note">
+          <strong>判断一个方案是否“自动化”的关键：</strong>是否能声明源字段与模型后，自动处理历史数据、增量变更、失败重试、索引维护、查询侧文本向量化和观测告警。只提供 <code>embedding(text)</code> 函数通常只能算“半自动”。
+        </div>
+      </section>
+
+      <section id="tencent">
+        <h2>3. 腾讯云 PostgreSQL Auto Embedding 技术实现拆解</h2>
+        <p>
+          腾讯云文档《云数据库 PostgreSQL 自动向量化》说明，<code>tencentdb_ai 1.5</code> 新增自动向量化能力，面向 PostgreSQL 17/18，
+          依赖 <code>pgvector</code>、<code>pgmq</code> 和 <code>tencentdb_ai</code> 后台工作进程。
+          用户通过一行 SQL 注册任务，后续 INSERT/UPDATE 会触发向量生成并写回目标列。
+        </p>
+
+        <h3>3.1 核心架构</h3>
+        <div class="grid cols-3">
+          <div class="card">
+            <h4>增量任务</h4>
+            <p>通过 <code>add_incr_autoembedding_task()</code> 创建，系统自动添加 vector 目标列、建立 INSERT AFTER 与 UPDATE BEFORE 触发器，把变更写入队列。</p>
+            <span class="pill green">trigger</span>
+            <span class="pill green">index-time</span>
+          </div>
+          <div class="card">
+            <h4>存量任务</h4>
+            <p>通过 <code>add_backfill_autoembedding_task()</code> 创建，按主键游标批量扫描历史数据并入队，适合先开启增量再回填旧数据。</p>
+            <span class="pill yellow">backfill</span>
+            <span class="pill yellow">cursor scan</span>
+          </div>
+          <div class="card">
+            <h4>后台工作进程</h4>
+            <p>通过 <code>shared_preload_libraries='tencentdb_ai'</code> 启动 bgworker，轮询 pgmq，批量调用模型并写回向量列。</p>
+            <span class="pill">queue</span>
+            <span class="pill">bgworker</span>
+          </div>
+        </div>
+
+        <h3>3.2 关键 API 与配置</h3>
+        <div class="table-wrap">
+          <table class="field-table">
+            <tbody>
+              <tr><td>版本要求</td><td>PostgreSQL 17/18；腾讯云内核版本 v17.10_r1.19、v18.4_r1.10 及以上；<code>tencentdb_ai >= 1.5</code>。</td></tr>
+              <tr><td>扩展依赖</td><td><code>CREATE EXTENSION tencentdb_ai CASCADE</code> 会安装/依赖 <code>pgvector</code> 与 <code>pgmq</code>；模型需注册到 <code>model_list</code> 并设置 <code>embedding_dim</code>。</td></tr>
+              <tr><td>增量函数</td><td><code>tencentdb_ai.add_incr_autoembedding_task(schema, table, source_columns, model, target_column, index_method, options)</code>，支持 <code>none</code>、<code>hnsw</code>、<code>ivfflat</code>。</td></tr>
+              <tr><td>存量函数</td><td><code>add_backfill_autoembedding_task()</code> 与 <code>run_backfill_autoembedding_task()</code>，目标向量列必须已存在，配置需与增量任务一致。</td></tr>
+              <tr><td>观测接口</td><td><code>autoembedding_status</code> 展示 pending、failed_count、backfilled_rows、last_error；<code>autoembedding_error</code> 记录 row_id、错误码与详情。</td></tr>
+              <tr><td>关键 GUC</td><td><code>autoembedding_batch_size</code>、<code>max_retry</code>、<code>retry_base_ms</code>、<code>max_input_bytes</code>、<code>naptime_ms</code>、<code>autoembedding_database</code>。</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3.3 数据处理语义</h3>
+        <pre><code>增量写入：
+用户 INSERT/UPDATE
+  -> 触发器只入队 row_id / 任务信息
+  -> bgworker 批量读取队列
+  -> 消费时重新读取源表当前内容
+  -> 调用 get_embedding()
+  -> 校验维度，并在写回前再次确认源内容未变
+  -> 写入 vector 列 / 维护 HNSW 或 IVFFlat 索引
+
+历史回填：
+创建 backfill task
+  -> 按单列主键游标分批扫描
+  -> 批量入队
+  -> 与增量消息共用消费、重试、错误记录机制
+  -> 推进游标直到 done</code></pre>
+
+        <h3>3.4 设计亮点</h3>
+        <ul>
+          <li><strong>异步化避免阻塞在线事务：</strong>触发器不直接调用远程模型，而是入队，由 bgworker 批量消费；这比同步触发器更适合生产写入路径。</li>
+          <li><strong>消费时重新读取 + 写回前确认：</strong>队列不保存完整源文本，避免旧消息覆盖新内容；在模型调用期间如源数据再次变化，会跳过过期写回。</li>
+          <li><strong>幂等与去重：</strong>按行级 row_id 去重，同一行多次变更最终基于最新内容生成向量，符合“最终一致”的语义。</li>
+          <li><strong>回填与增量可组合：</strong>先创建增量任务再创建存量任务，可以减少历史回填期间新增数据遗漏。</li>
+          <li><strong>运维可观测：</strong>任务状态视图、错误表、指数退避、最大重试次数、队列积压等是从 demo 到生产的关键差异。</li>
+          <li><strong>数据库安全边界：</strong>内部函数使用 <code>SECURITY DEFINER</code>，并通过事件触发器阻止活跃任务表的 DROP TABLE/DROP COLUMN。</li>
+        </ul>
+
+        <h3>3.5 局限与风险</h3>
+        <div class="grid cols-2">
+          <div class="warning">
+            <strong>一致性是最终一致，不是强一致。</strong>
+            写入事务提交后向量才由后台生成。检索业务需识别向量缺失或滞后状态，例如用 <code>embedding_updated_at</code>、<code>source_hash</code> 或状态列辅助判断。
+          </div>
+          <div class="warning">
+            <strong>依赖单列主键。</strong>
+            文档明确要求增量任务表必须有单列主键；复合主键、无主键日志表、分区表等场景需要额外验证。
+          </div>
+          <div class="warning">
+            <strong>模型版本治理未完全抽象。</strong>
+            文档关注 <code>embedding_dim</code>，但生产还需要 embedding model version、prompt/schema version、重嵌入策略和新旧索引并行切换。
+          </div>
+          <div class="warning">
+            <strong>外部模型服务成为瓶颈。</strong>
+            batch_size、max_input_bytes、naptime_ms 要与模型 QPS、token 限制、费用和失败率一起调优，否则会造成队列积压和检索新鲜度下降。
+          </div>
+        </div>
+
+        <h3>3.6 与其他方案的定位</h3>
+        <p>
+          腾讯云方案比 Aurora 的“参考架构式自动化”更产品化，因为队列、后台进程、状态视图、错误表被封装进扩展；但相较 Google AlloyDB、MongoDB Atlas、Elastic <code>semantic_text</code>，
+          它仍要求用户理解 PostgreSQL 扩展、GUC、任务函数与索引方法，属于“数据库内核扩展级自动化”，不是完全托管的字段级体验。
+        </p>
+      </section>
+
+      <section id="industry">
+        <h2>4. 产业落地与主流厂商矩阵</h2>
+        <p class="muted">下表和卡片可通过左侧字段筛选。成熟度依据公开资料中的 GA/Preview/官方实践/研究性质归类。</p>
+
+        <div class="table-wrap">
+          <table id="vendor-table">
+            <thead>
+              <tr>
+                <th>厂商</th>
+                <th>产品/类型</th>
+                <th>Auto Embedding 能力</th>
+                <th>实现模式</th>
+                <th>索引/检索</th>
+                <th>成熟度</th>
+                <th>评价</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="vendor-row" data-vendor="Tencent" data-category="PostgreSQL" data-automation="trigger queue backfill index-time" data-maturity="GA" data-text="腾讯 Tencent tencentdb_ai pgmq bgworker 自动向量化 PostgreSQL">
+                <td>Tencent</td>
+                <td>TencentDB for PostgreSQL</td>
+                <td>一行 SQL 注册增量/存量任务，INSERT/UPDATE 自动入队并写回 vector 列。</td>
+                <td>触发器 + pgmq + bgworker + 状态视图/错误表。</td>
+                <td>pgvector HNSW/IVFFlat，支持 RAG 函数生态。</td>
+                <td><span class="score high">GA/文档</span></td>
+                <td>工程闭环强，适合 PostgreSQL 原生业务；需关注模型版本与高写入压力。</td>
+              </tr>
+              <tr class="vendor-row" data-vendor="AWS" data-category="PostgreSQL" data-automation="trigger queue backfill" data-maturity="Pattern" data-text="AWS Aurora PostgreSQL Bedrock aws_ml Lambda SQS pg_cron automatic embeddings">
+                <td>AWS</td>
+                <td>Aurora PostgreSQL + Bedrock</td>
+                <td>官方博客给出五种自动生成策略：同步 aws_ml、Lambda、异步 Lambda、SQS 批处理、pg_cron。</td>
+                <td>组合式参考架构，应用/数据库自建任务系统。</td>
+                <td>pgvector HNSW；Bedrock Knowledge Bases 可托管入库。</td>
+                <td><span class="score mid">Pattern</span></td>
+                <td>灵活、生态完整，但自动化可靠性由用户实现。</td>
+              </tr>
+              <tr class="vendor-row" data-vendor="Alibaba" data-category="PostgreSQL Search" data-automation="in-database-inference index-time cdc-sync" data-maturity="GA" data-text="Alibaba PolarDB polar_ai PolarSearch AutoETL pgvector generated column">
+                <td>Alibaba</td>
+                <td>PolarDB for PostgreSQL / PolarSearch</td>
+                <td>PolarDB 支持 pgvector 与 <code>polar_ai.ai_text_embedding</code>；PolarSearch 提供 AutoETL 与自动 embedding/reranking 管道。</td>
+                <td>PostgreSQL 内函数/生成列 + 分布式搜索节点 AutoETL。</td>
+                <td>优化版 pgvector、HNSW、IVFFlat；PolarSearch 支持混合检索。</td>
+                <td><span class="score high">GA</span></td>
+                <td>兼顾 PG 原生和大规模搜索节点；产品边界需按引擎方案区分。</td>
+              </tr>
+              <tr class="vendor-row" data-vendor="Google" data-category="PostgreSQL" data-automation="trigger backfill auto-index in-database-inference index-time" data-maturity="Preview" data-text="Google AlloyDB AI auto vector embeddings initialize_embeddings transactional auto vector index ScaNN">
+                <td>Google</td>
+                <td>AlloyDB AI</td>
+                <td><code>ai.initialize_embeddings()</code> 声明源列、模型、目标向量列；支持历史大表生成和 transactional 增量刷新。</td>
+                <td>google_ml_integration + 内部触发/刷新机制；auto vector index 自动调参。</td>
+                <td>ScaNN index <code>mode='AUTO'</code>，自动维护/调优。</td>
+                <td><span class="score mid">Preview</span></td>
+                <td>字段级体验强，是最接近“数据库自动向量生命周期”的 PostgreSQL 路线之一。</td>
+              </tr>
+              <tr class="vendor-row" data-vendor="MongoDB" data-category="Document" data-automation="index-time query-time" data-maturity="Preview" data-text="MongoDB Atlas Automated Embedding autoEmbed Voyage AI internal collection query-time">
+                <td>MongoDB</td>
+                <td>Atlas Vector Search Automated Embedding</td>
+                <td><code>autoEmbed</code> 索引在 index-time 对字段自动生成向量，query-time 对文本查询自动生成向量。</td>
+                <td>索引定义 + Voyage AI 托管模型 + 内部生成向量集合。</td>
+                <td>Atlas Vector Search，支持过滤字段和相似度度量。</td>
+                <td><span class="score mid">Preview</span></td>
+                <td>对应用最透明，适合文档/Agent memory；模型与成本受托管服务约束。</td>
+              </tr>
+              <tr class="vendor-row" data-vendor="Elastic" data-category="Search" data-automation="index-time query-time" data-maturity="GA" data-text="Elasticsearch semantic_text inference endpoint automatic embeddings chunking ELSER dense sparse">
+                <td>Elastic</td>
+                <td>Elasticsearch semantic_text</td>
+                <td><code>semantic_text</code> 字段在写入时自动调用 inference endpoint、自动 chunk、存储向量；查询时可用 match/knn/sparse_vector。</td>
+                <td>字段类型 + inference endpoint + ingestion/search 双端点。</td>
+                <td>dense_vector/sparse_vector/HNSW；支持 BM25 + 语义混合。</td>
+                <td><span class="score high">GA</span></td>
+                <td>搜索体验成熟；生产需固定 inference_id 避免多索引模型混用。</td>
+              </tr>
+              <tr class="vendor-row" data-vendor="Snowflake" data-category="Warehouse" data-automation="index-time query-time cdc-sync" data-maturity="GA" data-text="Snowflake Cortex Search managed vector embeddings hybrid search refresh incremental">
+                <td>Snowflake</td>
+                <td>Cortex Search</td>
+                <td>创建 Cortex Search Service 后对搜索列自动 embedding，新增/更新行增量处理；支持托管模型或自带向量。</td>
+                <td>托管搜索服务 + warehouse 刷新 + Cortex 模型。</td>
+                <td>混合检索、语义 rerank、多索引/自定义向量。</td>
+                <td><span class="score high">GA</span></td>
+                <td>面向数仓数据的低运维 RAG/Search 服务；实时性取决于刷新策略与费用。</td>
+              </tr>
+              <tr class="vendor-row" data-vendor="Databricks" data-category="Lakehouse" data-automation="cdc-sync index-time query-time" data-maturity="GA" data-text="Databricks AI Search Vector Search Delta Sync managed embeddings continuous triggered CDF">
+                <td>Databricks</td>
+                <td>AI Search / Delta Sync Index</td>
+                <td>从 Delta 表创建索引，可选择 Databricks 计算 embedding 或使用已有向量；Continuous/Triggered 同步。</td>
+                <td>Delta CDF/同步管道 + Model Serving endpoint + Unity Catalog 治理。</td>
+                <td>ANN/Hybrid index，REST/Python 查询。</td>
+                <td><span class="score high">GA</span></td>
+                <td>适合湖仓和批流一体数据；低延迟在线写入需评估 continuous 成本。</td>
+              </tr>
+              <tr class="vendor-row" data-vendor="Baidu" data-category="VectorDB" data-automation="backfill index-time query-time" data-maturity="GA" data-text="Baidu VectorDB Qianfan AppBuilder pymochow DefaultPipeline QianfanEmbedder RAG">
+                <td>Baidu</td>
+                <td>VectorDB + 千帆/AppBuilder</td>
+                <td>AI Search/RAG 封装文档管理、解析分块、QianfanEmbedder、入库与向量/混合检索。</td>
+                <td>SDK Pipeline + 向量数据库 + 千帆模型服务。</td>
+                <td>HNSW/向量检索、BM25、混合检索。</td>
+                <td><span class="score high">GA</span></td>
+                <td>更像 RAG 管道级自动化，不是关系数据库触发器式自动化。</td>
+              </tr>
+              <tr class="vendor-row" data-vendor="ByteDance" data-category="Warehouse" data-automation="auto-index" data-maturity="GA" data-text="ByteDance BytePlus ByteHouse vector retrieval HNSW Faiss IVF_PQ SQL Python">
+                <td>ByteDance</td>
+                <td>ByteHouse / BytePlus</td>
+                <td>公开资料重点是高性能向量检索，Embedding 生成通常在外部模型/应用层完成。</td>
+                <td>ClickHouse 系数仓内向量索引与参数化查询。</td>
+                <td>HNSW、HNSW_SQ、Faiss IVF_FLAT/IVF_PQ/PQ_FS。</td>
+                <td><span class="score high">GA</span></td>
+                <td>检索性能体系强；Auto Embedding 生命周期能力公开信息较少。</td>
+              </tr>
+              <tr class="vendor-row" data-vendor="Oracle" data-category="Relational" data-automation="in-database-inference index-time" data-maturity="GA" data-text="Oracle Database 23ai 26ai AI Vector Search ONNX VECTOR_EMBEDDING DBMS_VECTOR">
+                <td>Oracle</td>
+                <td>Oracle AI Database 23ai/26ai</td>
+                <td>支持导入 ONNX embedding 模型，在数据库内用 <code>VECTOR_EMBEDDING</code> 生成向量；也可加载外部向量。</td>
+                <td>数据库内 ONNX Runtime + VECTOR 类型 + SQL/PLSQL 包。</td>
+                <td>HNSW/IVF 等向量索引，关系/向量联合 SQL。</td>
+                <td><span class="score high">GA</span></td>
+                <td>强在私有化和数据库内推理；自动增量任务需自行用触发器/作业编排。</td>
+              </tr>
+              <tr class="vendor-row" data-vendor="Microsoft" data-category="Relational" data-automation="auto-index filtered-ann" data-maturity="Preview" data-text="Microsoft Azure SQL SQL Server 2025 VECTOR DiskANN vector index iterative filtering">
+                <td>Microsoft</td>
+                <td>Azure SQL / SQL Server 2025</td>
+                <td>原生 VECTOR 类型、函数与 DiskANN 向量索引；Embedding 生成通常由外部 Azure AI 或应用流程完成。</td>
+                <td>关系引擎内向量类型 + DiskANN 索引 + 优化器。</td>
+                <td>DiskANN、近似搜索、迭代过滤、T-SQL 混合查询。</td>
+                <td><span class="score mid">Preview/GA 混合</span></td>
+                <td>向量检索数据库化很强；Auto Embedding 不是主要公开卖点。</td>
+              </tr>
+              <tr class="vendor-row" data-vendor="Supabase" data-category="PostgreSQL" data-automation="trigger queue backfill query-time" data-maturity="Pattern" data-text="Supabase automatic embeddings pgvector pgmq pg_net pg_cron Edge Functions OpenAI">
+                <td>Supabase</td>
+                <td>Supabase Postgres AI</td>
+                <td>官方指南用 triggers、pgmq、pg_net、pg_cron、Edge Functions 自动生成/重试 embedding。</td>
+                <td>Postgres 扩展组合 + 外部 Edge Function。</td>
+                <td>pgvector；可结合 Matryoshka/混合检索。</td>
+                <td><span class="score mid">Pattern</span></td>
+                <td>适合开发者自定义；生产可靠性与成本需自管。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>4.1 重点厂商解读</h3>
+        <div class="grid cols-2" id="vendor-cards">
+          <article class="card vendor-card" data-vendor="Google" data-category="PostgreSQL" data-automation="trigger backfill auto-index in-database-inference" data-maturity="Preview" data-text="AlloyDB ai.initialize_embeddings transactional auto vector index">
+            <h3>Google AlloyDB AI：声明式自动向量列 + 自动索引</h3>
+            <p>AlloyDB AI 的 <code>ai.initialize_embeddings()</code> 可以对大表源列批量生成向量，并配置 <code>incremental_refresh_mode => 'transactional'</code> 使源数据变化时自动更新。其 Auto Vector Index 用 <code>USING scann ... mode='AUTO'</code> 抽象掉参数调优。</p>
+            <p><strong>启示：</strong>未来 PostgreSQL 云数据库竞争会从“支持 pgvector”升级到“自动生成、自动刷新、自动调索引”。</p>
+          </article>
+
+          <article class="card vendor-card" data-vendor="MongoDB" data-category="Document" data-automation="index-time query-time" data-maturity="Preview" data-text="MongoDB autoEmbed Voyage AI query text internal generated embeddings">
+            <h3>MongoDB Atlas：面向文档与 Agent 的自动嵌入</h3>
+            <p><code>autoEmbed</code> 索引在字段级声明模型，MongoDB 在 index-time 自动生成并异步持久化 embedding，同时在 <code>$vectorSearch</code> 查询中接受文本 query 并自动生成查询向量。</p>
+            <p><strong>启示：</strong>查询侧自动向量化会显著降低应用接入门槛，但模型兼容性、token 费用和托管模型锁定需要治理。</p>
+          </article>
+
+          <article class="card vendor-card" data-vendor="Elastic" data-category="Search" data-automation="index-time query-time" data-maturity="GA" data-text="semantic_text automatic chunking inference endpoint sparse dense">
+            <h3>Elasticsearch：semantic_text 把向量字段产品化</h3>
+            <p><code>semantic_text</code> 字段自动完成 chunking、inference、向量存储，并支持 match、knn、sparse_vector 查询。Elastic 建议生产环境显式指定 <code>inference_id</code>，避免默认端点变化造成多索引模型不一致。</p>
+            <p><strong>启示：</strong>搜索引擎类产品在字段映射、混合检索和 rerank 体验上领先。</p>
+          </article>
+
+          <article class="card vendor-card" data-vendor="AWS" data-category="PostgreSQL" data-automation="trigger queue backfill" data-maturity="Pattern" data-text="Aurora Bedrock aws_ml Lambda SQS pg_cron">
+            <h3>Aurora：多种自动化模式的参考实现</h3>
+            <p>AWS 官方博客总结了从同步触发器调用 Bedrock，到 Lambda、SQS、pg_cron 批处理的多种架构。它强调 100-400ms 级单次 embedding 调用不适合长事务，应通过批处理或异步队列降低写入路径风险。</p>
+            <p><strong>启示：</strong>Aurora 当前更像提供积木，自动化程度取决于团队工程能力。</p>
+          </article>
+
+          <article class="card vendor-card" data-vendor="Alibaba" data-category="PostgreSQL Search" data-automation="in-database-inference cdc-sync index-time" data-maturity="GA" data-text="PolarDB polar_ai PolarSearch AutoETL">
+            <h3>阿里云：PG 内向量能力 + 搜索节点 AutoETL</h3>
+            <p>PolarDB for PostgreSQL 支持优化版 pgvector 和 <code>polar_ai</code> 嵌入函数；PolarSearch 则面向更大规模混合搜索，公开资料提到 AutoETL、自动 embedding 与 reranking 管道。</p>
+            <p><strong>启示：</strong>一体化数据库和外挂搜索节点会并存：前者低改造，后者面向十亿/百亿级和搜索生态。</p>
+          </article>
+
+          <article class="card vendor-card" data-vendor="Tencent" data-category="PostgreSQL" data-automation="trigger queue backfill" data-maturity="GA" data-text="TencentDB PostgreSQL tencentdb_ai autoembedding">
+            <h3>腾讯云：把 Auto Embedding 做成 PostgreSQL 扩展任务系统</h3>
+            <p>腾讯方案直接在数据库内封装任务、触发器、pgmq、bgworker 与错误表，用户只需注册任务；这比外部 ETL 更接近数据库原生，同时保留 SQL 可观测和 pgvector 生态。</p>
+            <p><strong>启示：</strong>适合已经在 TencentDB for PostgreSQL 上构建 RAG/语义检索的业务。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="patterns">
+        <h2>5. 架构模式对比</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>模式</th>
+                <th>典型厂商/产品</th>
+                <th>优点</th>
+                <th>缺点</th>
+                <th>适用场景</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>同步触发器调用模型</td>
+                <td>Aurora aws_ml、Oracle 自建触发器</td>
+                <td>实现简单，向量与事务接近强一致。</td>
+                <td>模型调用延迟和失败会放大写事务风险，不适合高 QPS 写入。</td>
+                <td>低频写入、对新鲜度要求极高、可接受写入延迟的内部系统。</td>
+              </tr>
+              <tr>
+                <td>触发器 + 队列 + 后台 worker</td>
+                <td>TencentDB、Supabase、Aurora SQS/Lambda</td>
+                <td>解耦事务和模型调用，支持批处理、重试和限流。</td>
+                <td>最终一致，需要积压监控、幂等设计、过期写回防护。</td>
+                <td>在线业务表、RAG 知识库、商品/内容语义索引。</td>
+              </tr>
+              <tr>
+                <td>字段/索引级自动 Embedding</td>
+                <td>MongoDB autoEmbed、Elastic semantic_text、Snowflake Cortex Search</td>
+                <td>接入最简单，查询侧也可自动向量化，开发者心智成本低。</td>
+                <td>模型、成本、索引内部细节受托管服务控制；跨云迁移较难。</td>
+                <td>快速构建 AI Search、Agent memory、企业知识库。</td>
+              </tr>
+              <tr>
+                <td>CDC/湖仓同步索引</td>
+                <td>Databricks Delta Sync、PolarSearch AutoETL</td>
+                <td>适合批流一体和大规模离线/近实时数据，治理和血缘较好。</td>
+                <td>端到端延迟通常高于事务触发器；依赖同步管道。</td>
+                <td>湖仓数据、日志、文档资产、BI + RAG。</td>
+              </tr>
+              <tr>
+                <td>数据库内推理</td>
+                <td>Oracle ONNX、AlloyDB google_ml、PolarDB polar_ai</td>
+                <td>减少数据出库，权限边界清晰，可用 SQL 编排。</td>
+                <td>模型格式、硬件、版本升级受限；复杂模型可能不适合数据库进程。</td>
+                <td>私有化部署、合规数据、稳定模型的批量生成。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>5.1 一致性语义</h3>
+        <ul>
+          <li><strong>强一致：</strong>同步事务内生成向量；代价是写入延迟、失败传播和模型服务耦合。</li>
+          <li><strong>读己之写但向量延迟：</strong>主数据可立即读到，向量字段异步补齐；大多数 Auto Embedding 产品采用此模式。</li>
+          <li><strong>近实时索引：</strong>Snowflake/Databricks/PolarSearch 这类服务通常按刷新或同步管道维护索引，适合搜索和分析，不适合严格事务语义。</li>
+        </ul>
+
+        <h3>5.2 生产系统必须补齐的元数据</h3>
+        <pre><code>recommended columns:
+  source_hash          -- 源字段归一化后的 hash，用于判断过期写回
+  embedding_model      -- 模型名称，如 hunyuan-embedding / gemini-embedding-001
+  embedding_version    -- 模型版本或端点版本
+  embedding_dim        -- 向量维度
+  embedding_status     -- pending / ready / failed / stale
+  embedding_updated_at -- 最近成功生成时间
+  embedding_error      -- 最近错误摘要
+  chunk_id / parent_id -- 文档分块场景的父子关系
+  acl / tenant_id      -- 过滤检索必须下推的安全字段</code></pre>
+      </section>
+
+      <section id="academic">
+        <h2>6. 学术层面的最新方案与趋势</h2>
+        <p>
+          学术界并不常把问题命名为 Auto Embedding，但其关键技术分散在向量数据库、混合检索、动态 ANN、表示学习、数据库查询优化和 RAG 系统中。
+          与产业落地最相关的方向如下。
+        </p>
+
+        <div class="grid cols-2" id="paper-cards">
+          <article class="card paper-card" data-vendor="Academic" data-category="Research" data-automation="filtered-ann" data-maturity="Research" data-text="ACORN predicate-agnostic filtered vector search HNSW hybrid search">
+            <h3>ACORN / ACORN-1：谓词感知的 HNSW 过滤检索</h3>
+            <p>ACORN 提出 predicate subgraph traversal，使 HNSW 在带结构化过滤条件时不再简单前过滤或后过滤。论文宣称在固定 recall 下相对既有方案有 2-1000 倍吞吐提升。ACORN-1 进一步降低构建成本，Lucene/Elastic 已公开介绍类似 ACORN-1 的 filtered HNSW 优化。</p>
+            <span class="pill green">filtered-ann</span>
+            <span class="pill gray">SIGMOD/PACMMOD 2024</span>
+          </article>
+
+          <article class="card paper-card" data-vendor="Academic" data-category="Research" data-automation="filtered-ann" data-maturity="Research" data-text="RACORN-1 adaptive recall preserving speedup low selectivity filtered vector search">
+            <h3>RACORN-1：低选择率过滤下的自适应回退</h3>
+            <p>RACORN-1 针对 ACORN-1 在极低选择率过滤下的连通性与召回崩塌问题，引入 Adaptive Search Fallback 和 Adaptive Exact Fallback，在 2026 预印本中报告了低选择率下明显的延迟下降和召回恢复。</p>
+            <span class="pill green">filtered-ann</span>
+            <span class="pill gray">2026 preprint</span>
+          </article>
+
+          <article class="card paper-card" data-vendor="Academic" data-category="Research" data-automation="filtered-ann auto-index" data-maturity="Research" data-text="VBase vector relational query relaxed monotonicity Open-Next TopK PostgreSQL">
+            <h3>VBase：向量检索与关系查询统一执行</h3>
+            <p>VBase 认为传统 TopK-only 接口难以与过滤、join、聚合等关系算子高效组合，提出 relaxed monotonicity 和 Open-Next 执行接口。它显示复杂在线向量查询可比现有系统快数个数量级。</p>
+            <span class="pill green">query optimizer</span>
+            <span class="pill gray">OSDI 2023</span>
+          </article>
+
+          <article class="card paper-card" data-vendor="Academic" data-category="Research" data-automation="auto-index" data-maturity="Research" data-text="FreshDiskANN streaming similarity search dynamic vector index SSD real-time update">
+            <h3>FreshDiskANN：面向实时更新的磁盘图 ANN</h3>
+            <p>FreshDiskANN 解决 DiskANN/图 ANN 索引静态化问题，用内存短期可写索引吸收增删，后台 StreamingMerge 合并到 SSD 长期索引，目标是在十亿级数据上保持高召回和实时更新。</p>
+            <span class="pill green">dynamic-ann</span>
+            <span class="pill gray">arXiv / DiskANN line</span>
+          </article>
+
+          <article class="card paper-card" data-vendor="Academic" data-category="Research" data-automation="auto-index" data-maturity="Research" data-text="Matryoshka Representation Learning adaptive retrieval truncated embeddings dimensionality">
+            <h3>Matryoshka Representation Learning：可变维度 Embedding</h3>
+            <p>MRL 训练单个模型在不同前缀维度上都保持可用语义表示，可用低维前缀做粗召回，再用全维向量 rerank。它为 Auto Embedding 带来“按成本/延迟动态选择维度”的能力。</p>
+            <span class="pill green">adaptive embedding</span>
+            <span class="pill gray">NeurIPS 2022 / 2024 rev</span>
+          </article>
+
+          <article class="card paper-card" data-vendor="Academic" data-category="Research" data-automation="query-time index-time" data-maturity="Research" data-text="hybrid retrieval RRF BM25 dense sparse ColBERT rerank late interaction RAG">
+            <h3>混合检索与 Late Interaction：从单向量到多阶段检索</h3>
+            <p>RAG 系统越来越少依赖单一 dense vector。BM25 + dense/sparse vector + RRF + reranker 是产业主流；ColBERT 类 late interaction 与多向量文档表示提高质量，但会增加索引规模与查询成本。</p>
+            <span class="pill green">hybrid retrieval</span>
+            <span class="pill gray">RAG systems</span>
+          </article>
+        </div>
+
+        <h3>6.1 对 Auto Embedding 产品的影响</h3>
+        <ul>
+          <li><strong>从“生成向量”升级为“生成可治理的检索资产”：</strong>模型版本、分块版本、维度版本和评测集会成为数据库元数据。</li>
+          <li><strong>过滤检索会成为核心卖点：</strong>企业 RAG 几乎总带 tenant、ACL、时间、品类、地域过滤；ACORN/VBase 类研究会进入主流数据库优化器。</li>
+          <li><strong>索引新鲜度是下一个战场：</strong>FreshDiskANN/SPFresh/LSM-VEC 的思路会影响云数据库如何在大规模动态数据上避免频繁重建 HNSW/IVF。</li>
+          <li><strong>自适应成本控制会产品化：</strong>MRL、量化、低维粗召回、全维 rerank、查询复杂度路由，会成为 Auto Embedding 的成本优化层。</li>
+          <li><strong>查询侧模型一致性需要制度化：</strong>index-time 和 query-time 的模型必须兼容，否则同一字段的向量空间不一致会直接损害召回。</li>
+        </ul>
+      </section>
+
+      <section id="evaluation">
+        <h2>7. 工程评估框架</h2>
+        <div class="grid cols-2">
+          <div class="card">
+            <h3>功能维度</h3>
+            <ul>
+              <li>是否支持历史回填与增量自动同步。</li>
+              <li>是否支持查询文本自动向量化。</li>
+              <li>是否支持多字段组合、视图、分块、metadata filter。</li>
+              <li>是否支持模型/维度/索引版本变更后的重嵌入。</li>
+              <li>是否有状态、错误、重试、限流和告警。</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>性能维度</h3>
+            <ul>
+              <li>写入事务额外开销与 P99 延迟。</li>
+              <li>回填吞吐、模型 QPS、token 成本、失败重试成本。</li>
+              <li>队列积压到检索可见的端到端新鲜度。</li>
+              <li>ANN recall@k、nDCG、MRR、过滤查询下的召回稳定性。</li>
+              <li>索引构建/维护时间、内存、磁盘与量化损失。</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>治理维度</h3>
+            <ul>
+              <li>密钥是否进入数据库，是否可 KMS/角色隔离。</li>
+              <li>源文本是否出域，是否支持私有模型或内网推理。</li>
+              <li>是否记录 embedding lineage、模型版本和数据血缘。</li>
+              <li>删除源数据时向量、内部集合、索引是否同步删除。</li>
+              <li>租户/ACL 过滤是否在向量检索阶段下推。</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>质量维度</h3>
+            <ul>
+              <li>分块策略：固定窗口、语义切分、结构化标题、重叠比例。</li>
+              <li>检索策略：dense、sparse、BM25、hybrid、rerank。</li>
+              <li>更新策略：全量重嵌入、增量变更、模型 A/B、双写索引。</li>
+              <li>评测：人工标注、线上点击、问答正确性、幻觉率。</li>
+              <li>漂移监控：源数据分布变化、模型版本变化、召回下降。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="recommendations">
+        <h2>8. 选型建议</h2>
+        <h3>8.1 按业务场景选择</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>场景</th>
+                <th>优先方案</th>
+                <th>原因</th>
+                <th>注意事项</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>已有 PostgreSQL 业务表，希望快速加 RAG/语义搜索</td>
+                <td>TencentDB Auto Embedding、AlloyDB、Aurora/Supabase 自建模式</td>
+                <td>数据不出库，SQL 生态和事务数据紧密结合。</td>
+                <td>高写入表建议异步队列；必须做 embedding_status 和积压监控。</td>
+              </tr>
+              <tr>
+                <td>文档/Agent memory 应用，开发团队不想管理向量管道</td>
+                <td>MongoDB autoEmbed、Elastic semantic_text、Snowflake Cortex Search</td>
+                <td>字段/服务级自动化，查询侧也可文本输入。</td>
+                <td>控制模型一致性、token 费用和跨云迁移风险。</td>
+              </tr>
+              <tr>
+                <td>湖仓/离线知识资产，需要治理和批流同步</td>
+                <td>Databricks AI Search、Snowflake Cortex Search、PolarSearch</td>
+                <td>天然接入数据血缘、权限、批流同步。</td>
+                <td>端到端实时性与成本需用业务 SLA 约束。</td>
+              </tr>
+              <tr>
+                <td>合规/私有化要求高，不能把源文本发外部 API</td>
+                <td>Oracle ONNX in-database、私有模型 + PG 队列 worker、Elastic 自托管模型</td>
+                <td>模型可在内网或数据库内执行。</td>
+                <td>模型更新、GPU/CPU 资源隔离和数据库稳定性要单独设计。</td>
+              </tr>
+              <tr>
+                <td>十亿级以上向量且过滤复杂</td>
+                <td>专用搜索/向量系统，关注 DiskANN、ScaNN、ACORN 类能力</td>
+                <td>纯 pgvector/HNSW 可能在过滤和动态更新上遇到瓶颈。</td>
+                <td>评测必须包含真实过滤条件和 ACL，不只测裸向量 top-k。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>8.2 对腾讯云 Auto Embedding 的改进建议</h3>
+        <ol>
+          <li><strong>显式加入模型版本与 source_hash：</strong>文档可建议目标表增加 <code>embedding_model_version</code>、<code>source_hash</code>，便于过期向量检测和重嵌入。</li>
+          <li><strong>提供查询侧向量化封装：</strong>类似 MongoDB/Elastic，支持在检索函数中直接传文本 query，并自动使用任务同款模型生成 query embedding。</li>
+          <li><strong>支持任务级限流与优先级：</strong>对存量回填和实时增量使用不同队列/优先级，防止回填拖慢新数据新鲜度。</li>
+          <li><strong>补充分区表、复合主键和多租户示例：</strong>企业表结构复杂，单列主键限制应配套迁移方案。</li>
+          <li><strong>支持模型切换的蓝绿重建：</strong>自动创建新向量列/新索引、后台回填、双读评测、原子切换，降低模型升级风险。</li>
+          <li><strong>引入混合检索模板：</strong>结合 pg_textsearch、BM25、pgvector 和 rerank，给出 RAG 质量评测样例。</li>
+        </ol>
+
+        <div class="danger">
+          <strong>不建议盲目使用 Auto Embedding 的情况：</strong>源表写入极高且对事务延迟极敏感；数据包含不可出域敏感内容但模型服务在外网；embedding 模型频繁切换但没有版本治理；检索强依赖 ACL 过滤但向量索引不支持过滤下推。
+        </div>
+      </section>
+
+      <section id="sources">
+        <h2>9. 参考资料</h2>
+        <ol class="source-list">
+          <li><a href="https://cloud.tencent.com/document/product/409/133912" target="_blank" rel="noreferrer">腾讯云：云数据库 PostgreSQL 自动向量化</a></li>
+          <li><a href="https://cloud.tencent.com/document/product/409/67017" target="_blank" rel="noreferrer">腾讯云：云数据库 PostgreSQL 内核版本更新动态</a></li>
+          <li><a href="https://aws.amazon.com/blogs/database/automating-vector-embedding-generation-in-amazon-aurora-postgresql-with-amazon-bedrock/" target="_blank" rel="noreferrer">AWS：Automating vector embedding generation in Amazon Aurora PostgreSQL with Amazon Bedrock</a></li>
+          <li><a href="https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraPostgreSQL.VectorDB.html" target="_blank" rel="noreferrer">AWS：Using Aurora PostgreSQL as a Knowledge Base for Amazon Bedrock</a></li>
+          <li><a href="https://www.alibabacloud.com/help/en/polardb/polardb-for-postgresql/getting-started-pgvector" target="_blank" rel="noreferrer">Alibaba Cloud：Enable pgvector for AI Embedding Searches on PolarDB PostgreSQL</a></li>
+          <li><a href="https://help.aliyun.com/en/polardb/polardb-for-postgresql/polardb-for-postgresql-vector-search-overview" target="_blank" rel="noreferrer">Alibaba Cloud：Vector search solution overview</a></li>
+          <li><a href="https://cloud.google.com/blog/products/databases/alloydb-ai-auto-vector-embeddings-and-auto-vector-index" target="_blank" rel="noreferrer">Google Cloud：AlloyDB AI auto vector embeddings and auto vector index</a></li>
+          <li><a href="https://docs.cloud.google.com/alloydb/docs/ai/generate-manage-auto-embeddings-for-tables" target="_blank" rel="noreferrer">Google Cloud：Generate and manage auto vector embeddings for large tables</a></li>
+          <li><a href="https://www.mongodb.com/docs/vector-search/crud-embeddings/automated-embedding/overview/" target="_blank" rel="noreferrer">MongoDB Docs：How Automated Embedding Works</a></li>
+          <li><a href="https://www.mongodb.com/company/blog/product-release-announcements/ai-search-for-agents-announcing-automated-embedding-atlas" target="_blank" rel="noreferrer">MongoDB：Automated Embedding in MongoDB Atlas</a></li>
+          <li><a href="https://www.elastic.co/docs/solutions/search/semantic-search/semantic-search-semantic-text" target="_blank" rel="noreferrer">Elastic：Semantic search with semantic_text</a></li>
+          <li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/8.19/semantic-text.html" target="_blank" rel="noreferrer">Elastic：Semantic text field type</a></li>
+          <li><a href="https://docs.snowflake.com/en/en/user-guide/snowflake-cortex/cortex-search/cortex-search-overview" target="_blank" rel="noreferrer">Snowflake：Cortex Search overview</a></li>
+          <li><a href="https://docs.databricks.com/aws/en/ai-search/ai-search" target="_blank" rel="noreferrer">Databricks：AI Search</a></li>
+          <li><a href="https://cloud.baidu.com/doc/VDB/s/em67pcsp5" target="_blank" rel="noreferrer">百度智能云：AI Search 高效构建 RAG 服务</a></li>
+          <li><a href="https://docs.byteplus.com/en/docs/bytehouse/bytehouse-high-performance-vector-retrieval-technology-guide" target="_blank" rel="noreferrer">BytePlus：ByteHouse high-performance vector retrieval technology guide</a></li>
+          <li><a href="https://docs.oracle.com/en/database/oracle/oracle-database/26/vecse/overview-ai-vector-search.html" target="_blank" rel="noreferrer">Oracle：Overview of Oracle AI Vector Search</a></li>
+          <li><a href="https://docs.oracle.com/en/database/oracle/oracle-database/26/vecse/onnx-pipeline-models-text-embedding.html" target="_blank" rel="noreferrer">Oracle：ONNX Pipeline Models: Text Embedding</a></li>
+          <li><a href="https://learn.microsoft.com/en-us/sql/relational-databases/vectors/vectors-sql-server" target="_blank" rel="noreferrer">Microsoft Learn：Vector Search & Vector Index - SQL Server</a></li>
+          <li><a href="https://devblogs.microsoft.com/azure-sql/diskann-vector-index-improvements/" target="_blank" rel="noreferrer">Microsoft Azure SQL：DiskANN Vector Index Improvements</a></li>
+          <li><a href="https://supabase.com/docs/guides/ai/automatic-embeddings" target="_blank" rel="noreferrer">Supabase：Automatic embeddings</a></li>
+          <li><a href="https://arxiv.org/pdf/2403.04871" target="_blank" rel="noreferrer">ACORN：Performant and Predicate-Agnostic Search Over Vector Embeddings and Structured Data</a></li>
+          <li><a href="https://www.usenix.org/conference/osdi23/presentation/zhang-qianxi" target="_blank" rel="noreferrer">VBase：Unifying Online Vector Similarity Search and Relational Queries via Relaxed Monotonicity</a></li>
+          <li><a href="https://doi.org/10.48550/arxiv.2105.09613" target="_blank" rel="noreferrer">FreshDiskANN：A Fast and Accurate Graph-Based ANN Index for Streaming Similarity Search</a></li>
+          <li><a href="https://arxiv.org/abs/2205.13147" target="_blank" rel="noreferrer">Matryoshka Representation Learning</a></li>
+          <li><a href="https://www.vldb.org/pvldb/vol18/p5488-caminal.pdf" target="_blank" rel="noreferrer">Filtered Vector Search: State-of-the-art and Research Opportunities</a></li>
+        </ol>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const filters = {
+      q: document.getElementById('q'),
+      vendor: document.getElementById('vendor'),
+      category: document.getElementById('category'),
+      automation: document.getElementById('automation'),
+      maturity: document.getElementById('maturity')
+    };
+
+    const count = document.getElementById('result-count');
+    const reset = document.getElementById('reset');
+
+    function includesField(value, needle) {
+      if (!needle) return true;
+      return (value || '').toLowerCase().includes(needle.toLowerCase());
+    }
+
+    function matches(el) {
+      const query = filters.q.value.trim().toLowerCase();
+      const text = [
+        el.dataset.text,
+        el.textContent,
+        el.dataset.vendor,
+        el.dataset.category,
+        el.dataset.automation,
+        el.dataset.maturity
+      ].join(' ').toLowerCase();
+
+      return (!query || text.includes(query))
+        && includesField(el.dataset.vendor, filters.vendor.value)
+        && includesField(el.dataset.category, filters.category.value)
+        && includesField(el.dataset.automation, filters.automation.value)
+        && includesField(el.dataset.maturity, filters.maturity.value);
+    }
+
+    function applyFilters() {
+      const items = [
+        ...document.querySelectorAll('.vendor-card'),
+        ...document.querySelectorAll('.paper-card'),
+        ...document.querySelectorAll('.vendor-row')
+      ];
+      let visibleCards = 0;
+      let visibleRows = 0;
+
+      items.forEach((el) => {
+        const ok = matches(el);
+        el.hidden = !ok;
+        if (ok && !el.classList.contains('vendor-row')) visibleCards += 1;
+        if (ok && el.classList.contains('vendor-row')) visibleRows += 1;
+      });
+
+      count.textContent = `匹配：${visibleRows} 行厂商矩阵，${visibleCards} 张解读/论文卡片`;
+    }
+
+    Object.values(filters).forEach((el) => el.addEventListener('input', applyFilters));
+    reset.addEventListener('click', () => {
+      Object.values(filters).forEach((el) => { el.value = ''; });
+      applyFilters();
+    });
+    applyFilters();
+  </script>
+</body>
+</html>
